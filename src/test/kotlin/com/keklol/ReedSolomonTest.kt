@@ -14,11 +14,22 @@ class ReedSolomonTest {
     }
 
     @Test
-    fun `decode should correct no errors`() {
-        val rs = ReedSolomon(10)
-        val data = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
-        val decoded = rs.decode(data)
-        assertArrayEquals(data, decoded)
+    fun `decode should pass through data without errors`() {
+        // Create a valid codeword with proper ECC
+        val rs = ReedSolomon(4)
+        val originalData = byteArrayOf(0x40, 0x11, 0x22, 0x33)
+
+        // Encode to get ECC bytes
+        val ecc = rs.encode(originalData)
+
+        // Create full codeword: data + ecc
+        val codeword = ByteArray(originalData.size + ecc.size)
+        originalData.copyInto(codeword)
+        ecc.copyInto(codeword, originalData.size)
+
+        // Decode should return the same codeword (no errors to correct)
+        val decoded = rs.decode(codeword)
+        assertArrayEquals(codeword, decoded)
     }
 
     @Test

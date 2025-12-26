@@ -119,11 +119,14 @@ class QRInfoTest {
         assertEquals(9, QRInfo.lengthBits(1, EncodingType.ALPHANUMERIC))
         assertEquals(8, QRInfo.lengthBits(1, EncodingType.BYTE))
 
-        // Version 10 (size type 0)
-        assertEquals(10, QRInfo.lengthBits(10, EncodingType.NUMERIC))
+        // Version 9 (size type 0)
+        assertEquals(10, QRInfo.lengthBits(9, EncodingType.NUMERIC))
 
-        // Version 27 (size type 1)
-        assertEquals(12, QRInfo.lengthBits(27, EncodingType.NUMERIC))
+        // Version 10 (size type 1)
+        assertEquals(12, QRInfo.lengthBits(10, EncodingType.NUMERIC))
+
+        // Version 27 (size type 2)
+        assertEquals(14, QRInfo.lengthBits(27, EncodingType.NUMERIC))
     }
 
     @Test
