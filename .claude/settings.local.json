@@ -8,7 +8,11 @@
       "Bash(ls:*)",
       "Bash(wc:*)",
       "Bash(./gradlew test:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(git init:*)",
+      "Bash(git submodule add:*)",
+      "Bash(gunzip:*)",
+      "Bash(python3:*)"
     ]
   }
 }

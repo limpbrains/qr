@@ -1,13 +1,9 @@
 # keklol
 
-A Kotlin library providing string utilities and QR code reading capabilities.
+A Kotlin library for QR code reading/decoding.
 
 ## Features
 
-### String Utilities
-- `revertx(input: String)`: Reverses the given string
-
-### QR Code Reader
 - `QRDecoder.decode(image: Image)`: Decodes a QR code from an image
 - `QRDecoder.decode(width: Int, height: Int, data: ByteArray)`: Decodes from raw pixel data
 
@@ -49,18 +45,6 @@ To run tests with verbose output:
 ```
 
 ## Usage
-
-### String Reversal
-
-```kotlin
-import com.keklol.revertx
-
-fun main() {
-    val original = "hello"
-    val reversed = revertx(original)
-    println(reversed)  // Output: olleh
-}
-```
 
 ### QR Code Reading
 
@@ -109,7 +93,6 @@ keklol/
 ├── settings.gradle.kts
 ├── src/
 │   ├── main/kotlin/com/keklol/
-│   │   ├── StringUtils.kt      # String reversal utility
 │   │   ├── QRDecoder.kt        # Main QR decoding API
 │   │   ├── Image.kt            # Image data class
 │   │   ├── Types.kt            # Point, Pattern, enums
@@ -122,12 +105,13 @@ keklol/
 │   │   ├── Transform.kt        # Perspective transform
 │   │   └── BitDecoder.kt       # Data extraction
 │   └── test/kotlin/com/keklol/
-│       ├── StringUtilsTest.kt
 │       ├── BitmapTest.kt
 │       ├── GaloisFieldTest.kt
 │       ├── ReedSolomonTest.kt
 │       ├── QRInfoTest.kt
-│       └── QRDecoderTest.kt
+│       ├── QRDecoderTest.kt
+│       └── VectorTest.kt       # Integration tests with test vectors
+├── test/vectors/               # Git submodule: qr-code-vectors
 └── README.md
 ```
 
@@ -142,3 +126,5 @@ keklol/
 ## Acknowledgments
 
 The QR code reading implementation is a Kotlin port of [paulmillr/qr](https://github.com/paulmillr/qr), a JavaScript QR code library.
+
+Test vectors from [paulmillr/qr-code-vectors](https://github.com/paulmillr/qr-code-vectors).
