@@ -15,10 +15,12 @@ dependencies {
 
     testImplementation(kotlin("test"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.0")
+    testImplementation("org.junit.jupiter:junit-jupiter-params:5.11.0")
 }
 
 tasks.test {
     useJUnitPlatform()
+    jvmArgs = listOf("-Xmx2g")  // 2GB heap for loading test vectors
 }
 
 kotlin {

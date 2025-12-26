@@ -12,7 +12,8 @@
       "Bash(git init:*)",
       "Bash(git submodule add:*)",
       "Bash(gunzip:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(git config:*)"
     ]
   }
 }
