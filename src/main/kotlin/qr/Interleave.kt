@@ -1,4 +1,4 @@
-package com.keklol
+package qr
 
 /**
  * Interleaves and de-interleaves data blocks for QR code error correction.

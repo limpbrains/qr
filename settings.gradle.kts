@@ -1,1 +1,1 @@
-rootProject.name = "keklol"
+rootProject.name = "qr"

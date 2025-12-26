@@ -1,4 +1,4 @@
-package com.keklol
+package qr
 
 /**
  * Represents an image with raw pixel data.

@@ -21,3 +21,9 @@ bin/
 
 # Log files
 *.log
+
+# original lib
+qr/
+
+# claude
+.claude/

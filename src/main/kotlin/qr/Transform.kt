@@ -1,4 +1,4 @@
-package com.keklol
+package qr
 
 import kotlin.math.max
 import kotlin.math.min

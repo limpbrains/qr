@@ -1,4 +1,4 @@
-package com.keklol
+package qr
 
 /**
  * Galois Field GF(2^8) operations for Reed-Solomon error correction.

@@ -1,4 +1,4 @@
-package com.keklol
+package qr
 
 import kotlin.math.abs
 import kotlin.math.ceil

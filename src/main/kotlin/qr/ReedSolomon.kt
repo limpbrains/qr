@@ -1,4 +1,4 @@
-package com.keklol
+package qr
 
 /**
  * Reed-Solomon encoder/decoder for QR code error correction.

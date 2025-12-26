@@ -1,4 +1,4 @@
-package com.keklol
+package qr
 
 /**
  * QR Code decoder.

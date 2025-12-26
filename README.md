@@ -1,76 +1,61 @@
-# keklol
+# QR
 
-A Kotlin library for QR code reading/decoding.
+A pure Kotlin library for QR code reading/decoding. Port of [Paul Miller's paulmillr/qr](https://github.com/paulmillr/qr) library.
+
+No external dependencies.
 
 ## Features
 
-- `QRDecoder.decode(image: Image)`: Decodes a QR code from an image
-- `QRDecoder.decode(width: Int, height: Int, data: ByteArray)`: Decodes from raw pixel data
+- Decode QR codes from raw RGBA/RGB pixel data
+- Supports QR versions 1-40
+- All error correction levels (L, M, Q, H)
+- Numeric, Alphanumeric, and Byte encoding modes
+- Automatic perspective correction
+- Reed-Solomon error correction
 
-## Requirements
+## Installation
 
-- JDK 17 or higher
-- Gradle (if wrapper not present)
+### Gradle (Kotlin DSL)
 
-## Setup
-
-If the Gradle wrapper is not present, generate it first:
-
-```bash
-gradle wrapper --gradle-version 8.5
+```kotlin
+dependencies {
+    implementation("io.github.limpbrains:qr:0.1.0")
+}
 ```
 
-Alternatively, you can use your local Gradle installation instead of `./gradlew` in the commands below.
+### Gradle (Groovy)
 
-## Build
-
-To build the project:
-
-```bash
-./gradlew build
-```
-
-## Run Tests
-
-To run the unit tests:
-
-```bash
-./gradlew test
-```
-
-To run tests with verbose output:
-
-```bash
-./gradlew test --info
+```groovy
+dependencies {
+    implementation 'io.github.limpbrains:qr:0.1.0'
+}
 ```
 
 ## Usage
 
-### QR Code Reading
+### Basic Usage
 
 ```kotlin
-import com.keklol.QRDecoder
-import com.keklol.Image
+import qr.QRDecoder
+import qr.Image
 
-fun main() {
-    // From raw RGBA bytes (e.g., from an image library)
-    val width = 640
-    val height = 480
-    val rgbaData: ByteArray = // ... get image data from your source
+// From raw RGBA bytes
+val width = 640
+val height = 480
+val rgbaData: ByteArray = // ... get image data from your source
 
-    val decoded = QRDecoder.decode(width, height, rgbaData)
-    println(decoded)
+val decoded = QRDecoder.decode(width, height, rgbaData)
+println(decoded)
 
-    // Or using Image class
-    val image = Image(width, height, rgbaData)
-    val decoded2 = QRDecoder.decode(image)
-}
+// Or using Image class
+val image = Image(width, height, rgbaData)
+val decoded2 = QRDecoder.decode(image)
 ```
 
 ### Error Handling
 
 ```kotlin
-import com.keklol.*
+import qr.*
 
 try {
     val result = QRDecoder.decode(image)
@@ -85,46 +70,50 @@ try {
 }
 ```
 
+## Requirements
+
+- JDK 17 or higher
+
+## Building from Source
+
+```bash
+# Build
+./gradlew build
+
+# Run tests
+./gradlew test
+
+# Publish to local Maven repository
+./gradlew publishToMavenLocal
+```
+
 ## Project Structure
 
 ```
-keklol/
-├── build.gradle.kts
-├── settings.gradle.kts
-├── src/
-│   ├── main/kotlin/com/keklol/
-│   │   ├── QRDecoder.kt        # Main QR decoding API
-│   │   ├── Image.kt            # Image data class
-│   │   ├── Types.kt            # Point, Pattern, enums
-│   │   ├── Bitmap.kt           # 2D bitmap class
-│   │   ├── GaloisField.kt      # GF(256) math
-│   │   ├── ReedSolomon.kt      # Error correction
-│   │   ├── QRInfo.kt           # QR constants/tables
-│   │   ├── Interleave.kt       # Block interleaving
-│   │   ├── PatternDetector.kt  # Pattern detection
-│   │   ├── Transform.kt        # Perspective transform
-│   │   └── BitDecoder.kt       # Data extraction
-│   └── test/kotlin/com/keklol/
-│       ├── BitmapTest.kt
-│       ├── GaloisFieldTest.kt
-│       ├── ReedSolomonTest.kt
-│       ├── QRInfoTest.kt
-│       ├── QRDecoderTest.kt
-│       └── VectorTest.kt       # Integration tests with test vectors
-├── test/vectors/               # Git submodule: qr-code-vectors
-└── README.md
+qr/
+├── src/main/kotlin/qr/
+│   ├── QRDecoder.kt        # Main public API
+│   ├── Image.kt            # Image data class
+│   ├── Types.kt            # Point, Pattern, enums, exceptions
+│   ├── Bitmap.kt           # 2D bitmap class
+│   ├── PatternDetector.kt  # Finder/alignment pattern detection
+│   ├── Transform.kt        # Perspective transformation
+│   ├── BitDecoder.kt       # Data extraction
+│   ├── QRInfo.kt           # QR constants/tables
+│   ├── GaloisField.kt      # GF(256) math
+│   ├── ReedSolomon.kt      # Error correction
+│   └── Interleave.kt       # Block interleaving
+├── src/test/kotlin/qr/
+│   └── *.kt                # Unit and integration tests
+└── test/vectors/           # Test vectors (git submodule)
 ```
 
-## Supported QR Code Features
+## License
 
-- QR code versions 1-40
-- All error correction levels (L, M, Q, H)
-- Numeric, Alphanumeric, and Byte encoding modes
-- Automatic perspective correction
-- Reed-Solomon error correction
+MIT License - see [LICENSE](LICENSE)
 
 ## Acknowledgments
 
-The QR code reading implementation is a Kotlin port of [paulmillr/qr](https://github.com/paulmillr/qr), a JavaScript QR code library.
+This is a Kotlin port of Paul Miller's [paulmillr/qr](https://github.com/paulmillr/qr) JavaScript QR code library.
 
 Test vectors from [paulmillr/qr-code-vectors](https://github.com/paulmillr/qr-code-vectors).
