@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "Bash(mkdir:*)",
+      "Bash(gradle wrapper:*)",
+      "Bash(tree:*)"
+    ]
+  }
+}

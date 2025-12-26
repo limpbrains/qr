@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+gradle-app.setting
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+
+# MacOS
+.DS_Store
+
+# Log files
+*.log
