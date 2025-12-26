@@ -4,7 +4,10 @@
       "WebFetch(domain:github.com)",
       "Bash(mkdir:*)",
       "Bash(gradle wrapper:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(./gradlew test:*)"
     ]
   }
 }
