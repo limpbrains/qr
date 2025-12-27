@@ -329,6 +329,9 @@ object PatternDetector {
                 }
 
                 val foundPattern = check(runs, y, x)
+                var shouldReset = false
+                var shouldBreak = false
+
                 if (foundPattern) {
                     ySkip = 2
                     if (skipped) {
@@ -347,30 +350,45 @@ object PatternDetector {
                             }
                             if (deviation <= 0.05 * total) {
                                 done = true
-                                break
+                                shouldBreak = true
                             }
                         }
+                        // else: shift (default)
                     } else if (found.size > 1) {
                         val confirmed = found.filter { it.count >= PATTERN_MIN_CONFIRMATIONS }
-                        if (confirmed.size >= 2) {
+                        if (confirmed.size < 2) {
+                            // Not enough confirmed patterns - reset and continue
+                            shouldReset = true
+                        } else {
                             skipped = true
                             val d = ((abs(confirmed[0].x - confirmed[1].x) -
                                     abs(confirmed[0].y - confirmed[1].y)) / 2).toInt()
-                            if (d > runs[2] + ySkip) {
+                            if (d <= runs[2] + ySkip) {
+                                shouldReset = true
+                            } else {
                                 y += d - runs[2] - ySkip
+                                shouldBreak = true
                             }
                         }
                     }
+                    // else (found.size <= 1): shift (default)
                 }
 
-                // Shift runs by 2
-                runs[0] = runs[2]
-                runs[1] = runs[3]
-                runs[2] = runs[4]
-                runs[3] = 0
-                runs[4] = 0
-                pos = 2
-                runs[pos]++
+                if (shouldBreak) {
+                    break
+                } else if (shouldReset) {
+                    runs.fill(0)
+                    pos = 0
+                } else {
+                    // Shift runs by 2
+                    runs[0] = runs[2]
+                    runs[1] = runs[3]
+                    runs[2] = runs[4]
+                    runs[3] = 0
+                    runs[4] = 0
+                    pos = 2
+                    runs[pos]++
+                }
                 x++
             }
             y += ySkip
@@ -449,6 +467,52 @@ object PatternDetector {
     }
 
     /**
+     * Check alignment pattern in a given direction using the same algorithm as JS.
+     * Returns the scan count (j) on success, or null on failure.
+     */
+    private fun checkAlignmentLine(
+        b: Bitmap,
+        runs: IntArray,
+        center: Point,
+        incr: Point,
+        maxCount: Int
+    ): Int? {
+        var j = 0
+        var p = center.copy()
+        val neg = Point(-incr.x, -incr.y)
+
+        // Check in negative direction (from center to 0)
+        for (idx in 1 downTo 0) {
+            while (b.isInside(p) && (b.point(p) == true) == ALIGNMENT_PATTERN[idx]) {
+                runs[idx]++
+                j++
+                p = p + neg
+            }
+            if (runs[idx] == 0) return null
+            // maxCount check for non-center runs (matching JS: runs[p] > res.size[p] * maxCount)
+            if (idx != 1 && maxCount > 0 && runs[idx] > ALIGNMENT_SIZE[idx] * maxCount) return null
+        }
+
+        // Reset position and j for positive direction (matching JS: j = 1)
+        p = center + incr
+        j = 1
+
+        // Check in positive direction (from center to length-1)
+        for (idx in 1 until 3) {
+            while (b.isInside(p) && (b.point(p) == true) == ALIGNMENT_PATTERN[idx]) {
+                runs[idx]++
+                j++
+                p = p + incr
+            }
+            if (runs[idx] == 0) return null
+            // maxCount check for non-center runs
+            if (idx != 1 && maxCount > 0 && runs[idx] > ALIGNMENT_SIZE[idx] * maxCount) return null
+        }
+
+        return j
+    }
+
+    /**
      * Find the alignment pattern near the estimated position.
      */
     fun findAlignment(b: Bitmap, est: Pattern, allowanceFactor: Int): Pattern {
@@ -478,8 +542,11 @@ object PatternDetector {
             var pos = 0
             var x = leftX
 
-            // Skip initial run
-            while (x <= rightX && (b.get(x, y) == true) == ALIGNMENT_PATTERN[0]) x++
+            // Skip initial run if it matches pattern[0] (only if not starting at edge)
+            // Matches JS: if (xStart) while (x < xEnd && !!b.data[y][x] === res.pattern[0]) x++;
+            if (leftX > 0) {
+                while (x <= rightX && (b.get(x, y) == true) == ALIGNMENT_PATTERN[0]) x++
+            }
 
             while (x <= rightX) {
                 val pixelValue = b.get(x, y) == true
@@ -502,80 +569,32 @@ object PatternDetector {
                     val total = runs.sum()
                     val xx = alignmentToCenter(runs, x)
 
-                    // Vertical check with maxCount limit (matching JS behavior)
+                    // Vertical check with maxCount = 2 * runs[1] (matching JS)
                     val maxCount = 2 * runs[1]
                     val vRuns = IntArray(3)
                     val vCenter = Point(xx.toInt().toDouble(), y.toDouble())
-                    var vp = vCenter
-                    var valid = true
 
-                    // Negative vertical
-                    for (idx in 1 downTo 0) {
-                        val neg = Point(0.0, -1.0)
-                        while (b.isInside(vp) && (b.point(vp) == true) == ALIGNMENT_PATTERN[idx]) {
-                            vRuns[idx]++
-                            // Limit non-center runs to maxCount (matching JS ALIGNMENT.check behavior)
-                            if (idx != 1 && vRuns[idx] > maxCount) {
-                                valid = false
-                                break
+                    val v = checkAlignmentLine(b, vRuns, vCenter, Point(0.0, 1.0), maxCount)
+                    if (v != null) {
+                        val vTotal = vRuns.sum()
+                        if (5 * abs(vTotal - total) < 2 * total && checkAlignmentSize(vRuns, moduleSize)) {
+                            // Calculate yy using same formula as JS: toCenter(rVert, v + y)
+                            val yy = alignmentToCenter(vRuns, v + y)
+
+                            // JS uses FINDER.totalSize (7) for moduleSize in add()
+                            val pattern = Pattern(xx, yy, total / FINDER_TOTAL_SIZE.toDouble(), 1)
+                            for (i in found.indices) {
+                                if (found[i].equals(pattern)) {
+                                    found[i] = found[i].merge(pattern)
+                                    return found[i]  // Return immediately on merge (matching JS)
+                                }
                             }
-                            vp = vp + neg
+                            found.add(pattern)
                         }
-                        if (!valid || vRuns[idx] == 0) break
-                    }
-
-                    if (!valid) {
-                        runs[0] = runs[2]
-                        runs[1] = 0
-                        runs[2] = 0
-                        pos = 0
-                        runs[pos]++
-                        x++
-                        continue
-                    }
-
-                    // Positive vertical
-                    vp = vCenter + Point(0.0, 1.0)
-                    for (idx in 1 until 3) {
-                        while (b.isInside(vp) && (b.point(vp) == true) == ALIGNMENT_PATTERN[idx]) {
-                            vRuns[idx]++
-                            // Limit non-center runs to maxCount
-                            if (idx != 1 && vRuns[idx] > maxCount) {
-                                valid = false
-                                break
-                            }
-                            vp = vp + Point(0.0, 1.0)
-                        }
-                        if (!valid || vRuns[idx] == 0) break
-                    }
-
-                    if (!valid) {
-                        runs[0] = runs[2]
-                        runs[1] = 0
-                        runs[2] = 0
-                        pos = 0
-                        runs[pos]++
-                        x++
-                        continue
-                    }
-
-                    val vTotal = vRuns.sum()
-                    if (5 * abs(vTotal - total) < 2 * total && checkAlignmentSize(vRuns, moduleSize)) {
-                        val yy = alignmentToCenter(vRuns, vRuns.sum() + y)
-
-                        // Note: JS uses FINDER_TOTAL_SIZE (7) for both finder and alignment patterns
-                        val pattern = Pattern(xx, yy, total / FINDER_TOTAL_SIZE.toDouble(), 1)
-                        for (i in found.indices) {
-                            if (found[i].equals(pattern)) {
-                                found[i] = found[i].merge(pattern)
-                                return found[i]
-                            }
-                        }
-                        found.add(pattern)
                     }
                 }
 
-                // Shift runs
+                // Shift runs by 2 (matching JS: res.shift(runs, 2))
                 runs[0] = runs[2]
                 runs[1] = 0
                 runs[2] = 0
@@ -732,17 +751,8 @@ object PatternDetector {
 
             for (i in listOf(4, 8, 16)) {
                 try {
-                    val found = findAlignment(b, est, i)
-                    // Validate: found alignment should be reasonably close to estimate
-                    val dx = kotlin.math.abs(found.x - est.x)
-                    val dy = kotlin.math.abs(found.y - est.y)
-                    // Allow up to 0.5 module deviation - strict validation to reject wrong alignments
-                    // The underlying alignment pattern detection needs further work to match JS behavior
-                    val maxDeviation = 0.5 * moduleSize
-                    if (dx <= maxDeviation && dy <= maxDeviation) {
-                        alignmentPattern = found
-                        break
-                    }
+                    alignmentPattern = findAlignment(b, est, i)
+                    break
                 } catch (e: Exception) {
                     // Continue trying with larger allowance
                 }
