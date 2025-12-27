@@ -742,13 +742,15 @@ object PatternDetector {
             // Bottom right estimate
             val brEst = Point(tr.x - tl.x + bl.x, tr.y - tl.y + bl.y)
             val c = 1.0 - 3.0 / (QRInfo.sizeEncode(version) - 7)
+            // Use average finder moduleSize for alignment detection (more robust than BWB-computed moduleSize)
+            val finderModuleSize = (tl.moduleSize + tr.moduleSize + bl.moduleSize) / 3
+            val alignmentModuleSize = (moduleSize + finderModuleSize) / 2
             val est = Pattern(
                 x = (tl.x + c * (brEst.x - tl.x)).toInt().toDouble(),
                 y = (tl.y + c * (brEst.y - tl.y)).toInt().toDouble(),
-                moduleSize = moduleSize,
+                moduleSize = alignmentModuleSize,
                 count = 1
             )
-
             for (i in listOf(4, 8, 16)) {
                 try {
                     alignmentPattern = findAlignment(b, est, i)
