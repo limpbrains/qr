@@ -502,19 +502,36 @@ object PatternDetector {
                     val total = runs.sum()
                     val xx = alignmentToCenter(runs, x)
 
-                    // Vertical check
+                    // Vertical check with maxCount limit (matching JS behavior)
+                    val maxCount = 2 * runs[1]
                     val vRuns = IntArray(3)
                     val vCenter = Point(xx.toInt().toDouble(), y.toDouble())
                     var vp = vCenter
+                    var valid = true
 
                     // Negative vertical
                     for (idx in 1 downTo 0) {
                         val neg = Point(0.0, -1.0)
                         while (b.isInside(vp) && (b.point(vp) == true) == ALIGNMENT_PATTERN[idx]) {
                             vRuns[idx]++
+                            // Limit non-center runs to maxCount (matching JS ALIGNMENT.check behavior)
+                            if (idx != 1 && vRuns[idx] > maxCount) {
+                                valid = false
+                                break
+                            }
                             vp = vp + neg
                         }
-                        if (vRuns[idx] == 0) break
+                        if (!valid || vRuns[idx] == 0) break
+                    }
+
+                    if (!valid) {
+                        runs[0] = runs[2]
+                        runs[1] = 0
+                        runs[2] = 0
+                        pos = 0
+                        runs[pos]++
+                        x++
+                        continue
                     }
 
                     // Positive vertical
@@ -522,16 +539,32 @@ object PatternDetector {
                     for (idx in 1 until 3) {
                         while (b.isInside(vp) && (b.point(vp) == true) == ALIGNMENT_PATTERN[idx]) {
                             vRuns[idx]++
+                            // Limit non-center runs to maxCount
+                            if (idx != 1 && vRuns[idx] > maxCount) {
+                                valid = false
+                                break
+                            }
                             vp = vp + Point(0.0, 1.0)
                         }
-                        if (vRuns[idx] == 0) break
+                        if (!valid || vRuns[idx] == 0) break
+                    }
+
+                    if (!valid) {
+                        runs[0] = runs[2]
+                        runs[1] = 0
+                        runs[2] = 0
+                        pos = 0
+                        runs[pos]++
+                        x++
+                        continue
                     }
 
                     val vTotal = vRuns.sum()
                     if (5 * abs(vTotal - total) < 2 * total && checkAlignmentSize(vRuns, moduleSize)) {
                         val yy = alignmentToCenter(vRuns, vRuns.sum() + y)
 
-                        val pattern = Pattern(xx, yy, total / ALIGNMENT_TOTAL_SIZE.toDouble(), 1)
+                        // Note: JS uses FINDER_TOTAL_SIZE (7) for both finder and alignment patterns
+                        val pattern = Pattern(xx, yy, total / FINDER_TOTAL_SIZE.toDouble(), 1)
                         for (i in found.indices) {
                             if (found[i].equals(pattern)) {
                                 found[i] = found[i].merge(pattern)
@@ -688,19 +721,28 @@ object PatternDetector {
         var alignmentPattern: Pattern? = null
         if (QRInfo.alignmentPatterns(version).isNotEmpty()) {
             // Bottom right estimate
-            val br = Point(tr.x - tl.x + bl.x, tr.y - tl.y + bl.y)
+            val brEst = Point(tr.x - tl.x + bl.x, tr.y - tl.y + bl.y)
             val c = 1.0 - 3.0 / (QRInfo.sizeEncode(version) - 7)
             val est = Pattern(
-                x = (tl.x + c * (br.x - tl.x)).toInt().toDouble(),
-                y = (tl.y + c * (br.y - tl.y)).toInt().toDouble(),
+                x = (tl.x + c * (brEst.x - tl.x)).toInt().toDouble(),
+                y = (tl.y + c * (brEst.y - tl.y)).toInt().toDouble(),
                 moduleSize = moduleSize,
                 count = 1
             )
 
             for (i in listOf(4, 8, 16)) {
                 try {
-                    alignmentPattern = findAlignment(b, est, i)
-                    break
+                    val found = findAlignment(b, est, i)
+                    // Validate: found alignment should be reasonably close to estimate
+                    val dx = kotlin.math.abs(found.x - est.x)
+                    val dy = kotlin.math.abs(found.y - est.y)
+                    // Allow up to 0.5 module deviation - strict validation to reject wrong alignments
+                    // The underlying alignment pattern detection needs further work to match JS behavior
+                    val maxDeviation = 0.5 * moduleSize
+                    if (dx <= maxDeviation && dy <= maxDeviation) {
+                        alignmentPattern = found
+                        break
+                    }
                 } catch (e: Exception) {
                     // Continue trying with larger allowance
                 }

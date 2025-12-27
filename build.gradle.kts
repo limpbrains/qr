@@ -27,6 +27,10 @@ java {
 tasks.test {
     useJUnitPlatform()
     jvmArgs = listOf("-Xmx2g")
+    testLogging {
+        showStandardStreams = true
+        events("passed", "failed", "skipped")
+    }
 }
 
 kotlin {
