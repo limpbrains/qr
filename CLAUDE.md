@@ -80,7 +80,7 @@ The `VectorTest.kt` uses a streaming JSON parser to avoid memory issues with the
 
 ## JS vs Kotlin Parity Issue
 
-**Current status**: 107/118 tests pass (90.68%)
+**Current status**: 97/118 tests pass (82.20%)
 
 ### Root Cause: JPEG Decoder Differences
 
@@ -93,30 +93,34 @@ This 1-2 pixel difference propagates through:
 
 ### Solutions Implemented
 
-1. **Threshold adjustment for borderline pixels** (IMPLEMENTED - improved from 82.20% to 90.68%)
+1. **Threshold adjustment for borderline pixels** (AVAILABLE - not enabled by default)
    - Added `thresholdOffset` parameter to `PatternDetector.toBitmap()`
-   - Added retry logic in `QRDecoder.decode()` that tries offsets [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5]
-   - This compensates for JPEG decoder differences where borderline pixels may be classified differently
+   - Retry logic in `QRDecoder.decode()` can try offsets [0, 1, -1, 2, -2, ...]
+   - Testing showed: `[0, ..., 5, -5]` improves pass rate to 107/118 (90.68%)
+   - Disabled by default for JS performance parity (uses offset=0 only)
+   - To enable: modify `THRESHOLD_OFFSETS` in `QRDecoder.kt`
 
 2. **More robust finder detection** (IMPLEMENTED)
    - Added retry logic in `PatternDetector.findFinder()` with relaxed variance parameters
    - Tries normal variance (2.0), then lenient (2.5), then very lenient (3.0) with lower confirmations
    - Helps detect finder patterns in degraded or blurry images
 
-### Remaining Failures (11 tests)
+### Remaining Failures (21 tests)
 
-The remaining failures are difficult to fix without major architectural changes:
-- 2 FinderNotFound (len=0): Images too degraded for pattern detection
-- 7 RS.decode errors: Perspective transform or bit extraction issues
-- 2 InvalidFormat: Format pattern reading errors
+- 10 RS.decode errors: Perspective transform or bit extraction issues
+- 5 FinderNotFound: Images too degraded or only 0-2 patterns found
+- 5 InvalidFormat/Version: Format pattern reading errors
+- 1 glare/image049.jpg: Various issues
 
 ### Possible Further Improvements
 
-1. **Multiple perspective transform attempts**
+1. **Enable threshold retry** - improves to 90.68% but adds overhead
+
+2. **Multiple perspective transform attempts**
    - If RS.decode fails, try slightly adjusted transform points
    - Use alignment pattern candidates with small offsets
 
-2. **Use same JPEG decoder**
+3. **Use same JPEG decoder**
    - Port jpeg-js to Kotlin or use a common library for perfect parity
 
 ### Key Files for Parity Work
