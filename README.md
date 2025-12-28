@@ -114,7 +114,11 @@ MIT License - see [LICENSE](LICENSE)
 
 ## JS vs Kotlin Parity
 
-This Kotlin library is a port of the JavaScript [paulmillr/qr](https://github.com/paulmillr/qr) library. Current test parity: **104/118 tests pass (88.14%)**.
+This Kotlin library is a port of the JavaScript [paulmillr/qr](https://github.com/paulmillr/qr) library.
+
+### Test Results
+- **Small vectors (ASCII art QR)**: 9050/9281 (97.51%)
+- **JPEG images (boofcv)**: 104/118 (88.14%)
 
 ### JPEG Decoder Differences
 

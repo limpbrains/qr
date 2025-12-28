@@ -80,7 +80,9 @@ The `VectorTest.kt` uses a streaming JSON parser to avoid memory issues with the
 
 ## JS vs Kotlin Parity Issue
 
-**Current status**: 104/118 tests pass (88.14%)
+**Current status**:
+- **Small vectors (ASCII art QR)**: 9050/9281 (97.51%)
+- **JPEG images (boofcv)**: 104/118 (88.14%)
 
 ### Root Cause: JPEG Decoder Differences
 

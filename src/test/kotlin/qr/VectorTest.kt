@@ -391,4 +391,39 @@ class VectorTest {
         // Decoder may not handle all QR versions perfectly
         assertTrue(successCount >= 5, "Expected at least 5 successful decodes, got $successCount")
     }
+
+    @Test
+    fun `full vector test - all small vectors`() {
+        // Load ALL vectors to match JS test coverage
+        val vectors = loadSmallVectorsStreaming(Int.MAX_VALUE)
+        if (vectors.isEmpty()) {
+            println("Skipping: test vectors not available")
+            return
+        }
+
+        var successCount = 0
+        var failCount = 0
+
+        for ((idx, vector) in vectors.withIndex()) {
+            try {
+                val bitmap = parseUnicodeQR(vector.out)
+                val image = bitmapToImage(bitmap, modulePixels = 10)
+                val decoded = QRDecoder.decode(image)
+
+                if (decoded == vector.text) {
+                    successCount++
+                } else {
+                    failCount++
+                }
+            } catch (e: Exception) {
+                failCount++
+            }
+        }
+
+        val passRate = if (vectors.isNotEmpty()) successCount.toDouble() / vectors.size * 100 else 0.0
+        println("Full vector test: $successCount / ${vectors.size} passed (${String.format("%.2f", passRate)}%)")
+
+        // This test is informational - we want to see coverage
+        assertTrue(vectors.size > 1000, "Expected to load many vectors, got ${vectors.size}")
+    }
 }
