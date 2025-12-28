@@ -114,7 +114,7 @@ MIT License - see [LICENSE](LICENSE)
 
 ## JS vs Kotlin Parity
 
-This Kotlin library is a port of the JavaScript [paulmillr/qr](https://github.com/paulmillr/qr) library. Current test parity: **97/118 tests pass (82.20%)**.
+This Kotlin library is a port of the JavaScript [paulmillr/qr](https://github.com/paulmillr/qr) library. Current test parity: **104/118 tests pass (88.14%)**.
 
 ### JPEG Decoder Differences
 
@@ -124,14 +124,17 @@ The JS and Kotlin implementations use different JPEG decoders (jpeg-js vs ImageI
 
 This 1-2 pixel difference propagates through the decoding pipeline and can cause failures on edge cases where thresholds are borderline.
 
-### Possible Improvement: Threshold Retry
+### Threshold Retry (Enabled)
 
-To improve pass rate at the cost of performance, `QRDecoder` can retry with different threshold offsets. Testing showed:
-- `[0]` (current): 97/118 (82.20%) - matches JS performance
-- `[0, 1, -1, 2, -2]`: 103/118 (87.29%) - max 5 attempts
-- `[0, ..., 5, -5]`: 107/118 (90.68%) - max 11 attempts
+To compensate for JPEG decoder differences, `QRDecoder` retries with different threshold offsets. Testing showed:
 
-To enable, modify `THRESHOLD_OFFSETS` in `QRDecoder.kt`.
+| Offsets | Attempts | Pass Rate |
+|---------|----------|-----------|
+| `[0]` | 1 | 97/118 (82.20%) |
+| `[0, -5, 5]` (current) | 3 | 104/118 (88.14%) |
+| `[0, ..., 5, -5]` | 11 | 107/118 (90.68%) |
+
+To adjust, modify `THRESHOLD_OFFSETS` in `QRDecoder.kt`.
 
 ## Acknowledgments
 

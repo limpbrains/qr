@@ -18,7 +18,7 @@ object QRDecoder {
     // Threshold offsets to try when decoding fails
     // Different JPEG decoders (jpeg-js vs ImageIO) produce slightly different pixel values
     // Trying different thresholds helps compensate for this
-    private val THRESHOLD_OFFSETS = listOf(0)
+    private val THRESHOLD_OFFSETS = listOf(0, -5, 5)
 
     /**
      * Decode a QR code from an Image.

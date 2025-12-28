@@ -80,7 +80,7 @@ The `VectorTest.kt` uses a streaming JSON parser to avoid memory issues with the
 
 ## JS vs Kotlin Parity Issue
 
-**Current status**: 97/118 tests pass (82.20%)
+**Current status**: 104/118 tests pass (88.14%)
 
 ### Root Cause: JPEG Decoder Differences
 
@@ -93,28 +93,42 @@ This 1-2 pixel difference propagates through:
 
 ### Solutions Implemented
 
-1. **Threshold adjustment for borderline pixels** (AVAILABLE - not enabled by default)
+1. **Threshold adjustment for borderline pixels** (ENABLED)
    - Added `thresholdOffset` parameter to `PatternDetector.toBitmap()`
-   - Retry logic in `QRDecoder.decode()` can try offsets [0, 1, -1, 2, -2, ...]
-   - Testing showed: `[0, ..., 5, -5]` improves pass rate to 107/118 (90.68%)
-   - Disabled by default for JS performance parity (uses offset=0 only)
-   - To enable: modify `THRESHOLD_OFFSETS` in `QRDecoder.kt`
+   - Retry logic in `QRDecoder.decode()` tries offsets `[0, -5, 5]`
+   - Testing showed best efficiency with `[0, -5, 5]`: 104/118 (88.14%) with only 3 attempts
+   - Full range `[0, ..., 5, -5]` achieves 107/118 (90.68%) but needs 11 attempts
+   - To adjust: modify `THRESHOLD_OFFSETS` in `QRDecoder.kt`
 
 2. **More robust finder detection** (IMPLEMENTED)
    - Added retry logic in `PatternDetector.findFinder()` with relaxed variance parameters
    - Tries normal variance (2.0), then lenient (2.5), then very lenient (3.0) with lower confirmations
    - Helps detect finder patterns in degraded or blurry images
 
-### Remaining Failures (21 tests)
+3. **3rd pattern estimation** (TESTED - not effective)
+   - Tried estimating 3rd finder pattern position from 2 found patterns
+   - Converts FinderNotFound to RS.decode errors (no net improvement)
+   - Estimated positions not accurate enough for perspective transform
 
-- 10 RS.decode errors: Perspective transform or bit extraction issues
-- 5 FinderNotFound: Images too degraded or only 0-2 patterns found
-- 5 InvalidFormat/Version: Format pattern reading errors
-- 1 glare/image049.jpg: Various issues
+### Remaining Failures (14 tests)
+
+- 8 RS.decode errors: Perspective transform or bit extraction issues
+- 3 FinderNotFound: Images too degraded (len=0) or partial patterns (len=1-2)
+- 3 InvalidFormat/Version: Format pattern reading errors
+
+### Threshold Retry Results
+
+| Offsets | Attempts | Pass Rate |
+|---------|----------|-----------|
+| `[0]` | 1 | 97/118 (82.20%) |
+| `[0, 1, -1]` | 3 | 101/118 (85.59%) |
+| `[0, -5, 5]` (current) | 3 | 104/118 (88.14%) |
+| `[0, 1, -1, 2, -2]` | 5 | 103/118 (87.29%) |
+| `[0, ..., 5, -5]` | 11 | 107/118 (90.68%) |
 
 ### Possible Further Improvements
 
-1. **Enable threshold retry** - improves to 90.68% but adds overhead
+1. **Use full threshold range** - `[0, ..., 5, -5]` for 90.68% (11 attempts)
 
 2. **Multiple perspective transform attempts**
    - If RS.decode fails, try slightly adjusted transform points
