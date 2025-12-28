@@ -90,17 +90,18 @@ object PatternDetector {
                     }
                 }
 
-                var average = floor(sum / (block * block).toDouble()).toInt()
+                var average = floor(sum / (block * block).toDouble())
                 if (maxB - minB <= GRAYSCALE_RANGE) {
-                    average = minB / 2
+                    average = minB / 2.0
                     if (by > 0 && bx > 0) {
                         val prev = (blocks[(by - 1) * bWidth + bx] +
                                 2 * blocks[by * bWidth + bx - 1] +
-                                blocks[(by - 1) * bWidth + bx - 1]) / 4
+                                blocks[(by - 1) * bWidth + bx - 1]) / 4.0
                         if (minB < prev) average = prev
                     }
                 }
-                blocks[bWidth * by + bx] = average
+                // JS uses int() which truncates towards 0 (unsigned right shift by 0)
+                blocks[bWidth * by + bx] = average.toInt()
             }
         }
 
@@ -113,7 +114,7 @@ object PatternDetector {
                 val xPos = cap(bx * block, 0, maxX)
                 val left = cap(bx, 2, bWidth - 3)
 
-                // 5x5 blocks average
+                // 5x5 blocks average (JS uses floating-point division)
                 var sum = 0
                 for (yy in -2..2) {
                     val y2 = bWidth * (top + yy) + left
@@ -121,7 +122,7 @@ object PatternDetector {
                         sum += blocks[y2 + xx]
                     }
                 }
-                val average = sum / 25
+                val average = sum / 25.0
 
                 for (y in 0 until block) {
                     val rowOffset = (yPos + y) * img.width + xPos
@@ -742,13 +743,11 @@ object PatternDetector {
             // Bottom right estimate
             val brEst = Point(tr.x - tl.x + bl.x, tr.y - tl.y + bl.y)
             val c = 1.0 - 3.0 / (QRInfo.sizeEncode(version) - 7)
-            // Use average finder moduleSize for alignment detection (more robust than BWB-computed moduleSize)
-            val finderModuleSize = (tl.moduleSize + tr.moduleSize + bl.moduleSize) / 3
-            val alignmentModuleSize = (moduleSize + finderModuleSize) / 2
+            // Use BWB-computed moduleSize (same as JS)
             val est = Pattern(
                 x = (tl.x + c * (brEst.x - tl.x)).toInt().toDouble(),
                 y = (tl.y + c * (brEst.y - tl.y)).toInt().toDouble(),
-                moduleSize = alignmentModuleSize,
+                moduleSize = moduleSize,
                 count = 1
             )
             for (i in listOf(4, 8, 16)) {
