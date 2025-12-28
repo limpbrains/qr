@@ -15,6 +15,11 @@ package qr
  */
 object QRDecoder {
 
+    // Threshold offsets to try when decoding fails
+    // Different JPEG decoders (jpeg-js vs ImageIO) produce slightly different pixel values
+    // Trying different thresholds helps compensate for this
+    private val THRESHOLD_OFFSETS = listOf(0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5)
+
     /**
      * Decode a QR code from an Image.
      *
@@ -28,8 +33,28 @@ object QRDecoder {
         require(image.height > 0) { "Invalid image height: ${image.height}" }
         require(image.data.isNotEmpty()) { "Image data is empty" }
 
-        // Convert image to binary bitmap
-        val bitmap = PatternDetector.toBitmap(image)
+        var lastException: Exception? = null
+
+        // Try different threshold offsets to handle JPEG decoder differences
+        for (offset in THRESHOLD_OFFSETS) {
+            try {
+                return decodeWithOffset(image, offset)
+            } catch (e: Exception) {
+                lastException = e
+                // Continue to next offset
+            }
+        }
+
+        // All offsets failed, throw the last exception
+        throw lastException ?: QRDecodingException("Failed to decode QR code")
+    }
+
+    /**
+     * Internal decode method with a specific threshold offset.
+     */
+    private fun decodeWithOffset(image: Image, thresholdOffset: Int): String {
+        // Convert image to binary bitmap with threshold offset
+        val bitmap = PatternDetector.toBitmap(image, thresholdOffset)
 
         // Detect QR code patterns and extract aligned bits
         val (bits, _) = PatternDetector.detect(bitmap)

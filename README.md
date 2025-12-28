@@ -112,6 +112,18 @@ qr/
 
 MIT License - see [LICENSE](LICENSE)
 
+## JS vs Kotlin Parity
+
+This Kotlin library is a port of the JavaScript [paulmillr/qr](https://github.com/paulmillr/qr) library. Current test parity: **107/118 tests pass (90.68%)**.
+
+### JPEG Decoder Differences
+
+The JS and Kotlin implementations use different JPEG decoders (jpeg-js vs ImageIO) that produce slightly different pixel values. For example, at the same pixel:
+- **JS:** r=125, g=112, b=110
+- **Kotlin:** r=126, g=112, b=112
+
+This 1-2 pixel difference propagates through the decoding pipeline and can cause failures on edge cases where thresholds are borderline.
+
 ## Acknowledgments
 
 This is a Kotlin port of Paul Miller's [paulmillr/qr](https://github.com/paulmillr/qr) JavaScript QR code library.

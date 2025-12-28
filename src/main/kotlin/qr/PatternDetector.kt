@@ -46,8 +46,9 @@ object PatternDetector {
 
     /**
      * Convert an image to a binary bitmap using adaptive thresholding.
+     * @param thresholdOffset Offset added to threshold comparison (0 = normal, negative = more dark pixels, positive = more light pixels)
      */
-    fun toBitmap(img: Image): Bitmap {
+    fun toBitmap(img: Image, thresholdOffset: Int = 0): Bitmap {
         val bytesPerPixel = img.bytesPerPixel
         val brightness = IntArray(img.height * img.width)
 
@@ -128,7 +129,8 @@ object PatternDetector {
                     val rowOffset = (yPos + y) * img.width + xPos
                     for (x in 0 until block) {
                         if (yPos + y < img.height && xPos + x < img.width) {
-                            if (brightness[rowOffset + x] <= average) {
+                            // thresholdOffset: negative = more dark pixels, positive = more light pixels
+                            if (brightness[rowOffset + x] <= average + thresholdOffset) {
                                 matrix.set(xPos + x, yPos + y, true)
                             }
                         }
@@ -222,11 +224,39 @@ object PatternDetector {
 
     /**
      * Find the three finder patterns in a bitmap.
+     * Uses default variance parameters, then retries with relaxed parameters if needed.
      */
     fun findFinder(b: Bitmap): Triple<Pattern, Pattern, Pattern> {
+        // Try with normal parameters first
+        try {
+            return findFinderWithParams(b, PATTERN_VARIANCE, PATTERN_VARIANCE_DIAGONAL, PATTERN_MIN_CONFIRMATIONS)
+        } catch (e: FinderNotFoundException) {
+            // Retry with relaxed parameters
+        }
+
+        // Try with more lenient variance (2.5 instead of 2.0)
+        try {
+            return findFinderWithParams(b, 2.5, 1.5, PATTERN_MIN_CONFIRMATIONS)
+        } catch (e: FinderNotFoundException) {
+            // Retry with even more lenient parameters
+        }
+
+        // Try with very lenient variance and lower confirmations
+        return findFinderWithParams(b, 3.0, 2.0, 1)
+    }
+
+    /**
+     * Find the three finder patterns with configurable parameters.
+     */
+    private fun findFinderWithParams(
+        b: Bitmap,
+        patternVariance: Double,
+        patternVarianceDiagonal: Double,
+        minConfirmations: Int
+    ): Triple<Pattern, Pattern, Pattern> {
         val found = mutableListOf<Pattern>()
 
-        fun checkRuns(runs: IntArray, v: Double = PATTERN_VARIANCE): Boolean {
+        fun checkRuns(runs: IntArray, v: Double = patternVariance): Boolean {
             val total = runs.sum()
             if (total < FINDER_TOTAL_SIZE) return false
             val moduleSize = total / FINDER_TOTAL_SIZE.toDouble()
@@ -284,7 +314,7 @@ object PatternDetector {
                 if (dRuns[idx] == 0) return false
             }
 
-            if (!checkRuns(dRuns, PATTERN_VARIANCE_DIAGONAL)) return false
+            if (!checkRuns(dRuns, patternVarianceDiagonal)) return false
 
             // Add pattern to found list
             val moduleSize = total / FINDER_TOTAL_SIZE.toDouble()
@@ -339,7 +369,7 @@ object PatternDetector {
                         var count = 0
                         var total = 0.0
                         for (p in found) {
-                            if (p.count < PATTERN_MIN_CONFIRMATIONS) continue
+                            if (p.count < minConfirmations) continue
                             count++
                             total += p.moduleSize
                         }
@@ -356,7 +386,7 @@ object PatternDetector {
                         }
                         // else: shift (default)
                     } else if (found.size > 1) {
-                        val confirmed = found.filter { it.count >= PATTERN_MIN_CONFIRMATIONS }
+                        val confirmed = found.filter { it.count >= minConfirmations }
                         if (confirmed.size < 2) {
                             // Not enough confirmed patterns - reset and continue
                             shouldReset = true

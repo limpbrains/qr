@@ -77,3 +77,50 @@ The `VectorTest.kt` uses a streaming JSON parser to avoid memory issues with the
 - Decoder works best with Version 1-2 QR codes (smaller codes)
 - Higher version QR codes may fail pattern detection
 - No support for Kanji encoding mode
+
+## JS vs Kotlin Parity Issue
+
+**Current status**: 107/118 tests pass (90.68%)
+
+### Root Cause: JPEG Decoder Differences
+
+JS (jpeg-js) and Kotlin (ImageIO) use different JPEG decoders that produce slightly different pixel values:
+- **JS:** r=125, g=112, b=110, brightness=114
+- **Kotlin:** r=126, g=112, b=112, brightness=115
+
+This 1-2 pixel difference propagates through:
+1. Brightness calculation → 2. Block averages → 3. Binary bitmap → 4. Finder positions → 5. Perspective transform → 6. Bit extraction → 7. RS.decode errors
+
+### Solutions Implemented
+
+1. **Threshold adjustment for borderline pixels** (IMPLEMENTED - improved from 82.20% to 90.68%)
+   - Added `thresholdOffset` parameter to `PatternDetector.toBitmap()`
+   - Added retry logic in `QRDecoder.decode()` that tries offsets [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5]
+   - This compensates for JPEG decoder differences where borderline pixels may be classified differently
+
+2. **More robust finder detection** (IMPLEMENTED)
+   - Added retry logic in `PatternDetector.findFinder()` with relaxed variance parameters
+   - Tries normal variance (2.0), then lenient (2.5), then very lenient (3.0) with lower confirmations
+   - Helps detect finder patterns in degraded or blurry images
+
+### Remaining Failures (11 tests)
+
+The remaining failures are difficult to fix without major architectural changes:
+- 2 FinderNotFound (len=0): Images too degraded for pattern detection
+- 7 RS.decode errors: Perspective transform or bit extraction issues
+- 2 InvalidFormat: Format pattern reading errors
+
+### Possible Further Improvements
+
+1. **Multiple perspective transform attempts**
+   - If RS.decode fails, try slightly adjusted transform points
+   - Use alignment pattern candidates with small offsets
+
+2. **Use same JPEG decoder**
+   - Port jpeg-js to Kotlin or use a common library for perfect parity
+
+### Key Files for Parity Work
+- `PatternDetector.kt:toBitmap()` - Binary thresholding (threshold adjustment here)
+- `PatternDetector.kt:findFinder()` - Finder pattern detection (robustness here)
+- `QRDecoder.kt:decode()` - Entry point (retry logic here)
+- `Transform.kt:transform()` - Perspective transform
