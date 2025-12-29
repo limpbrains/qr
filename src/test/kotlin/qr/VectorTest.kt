@@ -453,37 +453,4 @@ class VectorTest {
         assertTrue(vectors.size > 1000, "Expected to load many vectors, got ${vectors.size}")
     }
 
-    @Test
-    fun `first 500 vectors test`() {
-        // Test first 500 vectors to compare with JS
-        val vectors = loadSmallVectorsStreaming(500)
-        if (vectors.isEmpty()) {
-            println("Skipping: test vectors not available")
-            return
-        }
-
-        var successCount = 0
-
-        for ((idx, vector) in vectors.withIndex()) {
-            try {
-                val bitmap = parseUnicodeQR(vector.out)
-                val image = bitmapToImage(bitmap, modulePixels = 10)
-                val decoded = QRDecoder.decode(image)
-
-                if (decoded == vector.text) {
-                    successCount++
-                }
-            } catch (e: Exception) {
-                // fail silently
-            }
-        }
-
-        val passRate = successCount.toDouble() / vectors.size * 100
-        println("First 500 vectors: $successCount / ${vectors.size} passed (${String.format("%.2f", passRate)}%)")
-    }
-
-    // Note: Vector [53] fails in both JS and Kotlin with InvalidVersionException
-    // This is because the QR data contains a pattern at row 12 that matches the
-    // 1:1:3:1:1 finder pattern ratio, causing a false positive in finder detection.
-    // This is a limitation of the decoder algorithm, not a Kotlin-specific bug.
 }

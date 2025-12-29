@@ -117,7 +117,7 @@ MIT License - see [LICENSE](LICENSE)
 This Kotlin library is a port of the JavaScript [paulmillr/qr](https://github.com/paulmillr/qr) library.
 
 ### Test Results
-- **Small vectors (ASCII art QR)**: 9050/9281 (97.51%)
+- **Small vectors (ASCII art QR)**: 9133/9281 (98.41%)
 - **JPEG images (boofcv)**: 104/118 (88.14%)
 
 ### JPEG Decoder Differences

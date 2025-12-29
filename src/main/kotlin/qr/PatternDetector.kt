@@ -368,10 +368,12 @@ object PatternDetector {
                     if (skipped) {
                         var count = 0
                         var total = 0.0
+                        val confirmed = mutableListOf<Pattern>()
                         for (p in found) {
                             if (p.count < minConfirmations) continue
                             count++
                             total += p.moduleSize
+                            confirmed.add(p)
                         }
                         if (count >= 3) {
                             val average = total / found.size
@@ -380,8 +382,22 @@ object PatternDetector {
                                 deviation += abs(p.moduleSize - average)
                             }
                             if (deviation <= 0.05 * total) {
-                                done = true
-                                shouldBreak = true
+                                // Before stopping, verify the 3 patterns form a valid right isoceles triangle
+                                // The two shorter sides should be roughly equal (within 20%)
+                                val p0 = confirmed[0]
+                                val p1 = confirmed[1]
+                                val p2 = confirmed[2]
+                                val d01 = Point.distance(p0.toPoint(), p1.toPoint())
+                                val d12 = Point.distance(p1.toPoint(), p2.toPoint())
+                                val d02 = Point.distance(p0.toPoint(), p2.toPoint())
+                                val sorted = listOf(d01, d12, d02).sorted()
+                                val ratio = sorted[0] / sorted[1]
+                                // For a valid QR finder triangle, the two shorter sides should be nearly equal
+                                if (ratio > 0.8) {
+                                    done = true
+                                    shouldBreak = true
+                                }
+                                // else: continue scanning to find better patterns
                             }
                         }
                         // else: shift (default)

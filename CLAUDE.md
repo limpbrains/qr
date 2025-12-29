@@ -81,7 +81,7 @@ The `VectorTest.kt` uses a streaming JSON parser to avoid memory issues with the
 ## JS vs Kotlin Parity
 
 **Current status**:
-- **Small vectors (ASCII art QR)**: 9050/9281 (97.51%) ✅ **Exact parity with JS**
+- **Small vectors (ASCII art QR)**: 9133/9281 (98.41%) ✅ **Exceeds JS parity**
 - **JPEG images (boofcv)**: 104/118 (88.14%)
 
 ### Small Vector Test Results
@@ -117,7 +117,13 @@ This 1-2 pixel difference propagates through:
    - Tries normal variance (2.0), then lenient (2.5), then very lenient (3.0) with lower confirmations
    - Helps detect finder patterns in degraded or blurry images
 
-3. **3rd pattern estimation** (TESTED - not effective)
+3. **Triangle validation before early termination** (IMPLEMENTED)
+   - Before stopping after finding 3 patterns, validates they form a right isoceles triangle
+   - Checks that the ratio of two shorter sides is > 0.8
+   - Prevents false positives when QR data accidentally contains 1:1:3:1:1 patterns
+   - Improved small vector pass rate from 97.51% to 98.41% (+83 vectors)
+
+4. **3rd pattern estimation** (TESTED - not effective)
    - Tried estimating 3rd finder pattern position from 2 found patterns
    - Converts FinderNotFound to RS.decode errors (no net improvement)
    - Estimated positions not accurate enough for perspective transform
