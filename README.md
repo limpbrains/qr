@@ -16,11 +16,23 @@ No external dependencies.
 
 ## Installation
 
+Add JitPack repository to your `settings.gradle.kts`:
+
+```kotlin
+dependencyResolutionManagement {
+    repositories {
+        maven("https://jitpack.io")
+    }
+}
+```
+
+Then add the dependency:
+
 ### Gradle (Kotlin DSL)
 
 ```kotlin
 dependencies {
-    implementation("io.github.limpbrains:qr:0.1.0")
+    implementation("com.github.limpbrains:qr:v0.0.1")
 }
 ```
 
@@ -28,7 +40,7 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'io.github.limpbrains:qr:0.1.0'
+    implementation 'com.github.limpbrains:qr:v0.0.1'
 }
 ```
 
