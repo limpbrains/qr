@@ -31,6 +31,10 @@ class VectorTest {
         /**
          * Parse Unicode art QR code into a 2D boolean array.
          * true = black module, false = white module
+         *
+         * QR codes have sizes 21, 25, 29, 33... (4n+1, always odd).
+         * Unicode art uses 2 rows per line, so odd-height QRs need the
+         * last row trimmed to get a square result.
          */
         fun parseUnicodeQR(out: String): Array<BooleanArray> {
             val lines = out.split('\n').filter { it.isNotEmpty() }
@@ -38,6 +42,7 @@ class VectorTest {
 
             val width = lines.maxOf { it.length }
             val height = lines.size * 2  // Each line represents 2 rows
+            // Note: height may be > width for odd-sized QRs, but we keep all data
 
             val result = Array(height) { BooleanArray(width) }
 
@@ -71,7 +76,14 @@ class VectorTest {
                 }
             }
 
-            return result
+            // QR codes are always square. For odd-height QRs, the ASCII art has an extra
+            // "phantom" row at the bottom (JS treats it as black for the toASCII encoding).
+            // Trim height to match width to get a square bitmap.
+            return if (height > width) {
+                result.take(width).toTypedArray()
+            } else {
+                result
+            }
         }
 
         /**
@@ -403,6 +415,7 @@ class VectorTest {
 
         var successCount = 0
         var failCount = 0
+        val failures = mutableListOf<Triple<Int, String, String>>() // idx, expected, error
 
         for ((idx, vector) in vectors.withIndex()) {
             try {
@@ -414,16 +427,63 @@ class VectorTest {
                     successCount++
                 } else {
                     failCount++
+                    if (failures.size < 10) {
+                        failures.add(Triple(idx, vector.text, "Got: $decoded"))
+                    }
                 }
             } catch (e: Exception) {
                 failCount++
+                if (failures.size < 10) {
+                    failures.add(Triple(idx, vector.text, "${e.javaClass.simpleName}: ${e.message}"))
+                }
             }
         }
 
         val passRate = if (vectors.isNotEmpty()) successCount.toDouble() / vectors.size * 100 else 0.0
         println("Full vector test: $successCount / ${vectors.size} passed (${String.format("%.2f", passRate)}%)")
 
+        if (failures.isNotEmpty()) {
+            println("First ${failures.size} failures:")
+            failures.forEach { (idx, expected, error) ->
+                println("  [$idx] '$expected' -> $error")
+            }
+        }
+
         // This test is informational - we want to see coverage
         assertTrue(vectors.size > 1000, "Expected to load many vectors, got ${vectors.size}")
     }
+
+    @Test
+    fun `first 500 vectors test`() {
+        // Test first 500 vectors to compare with JS
+        val vectors = loadSmallVectorsStreaming(500)
+        if (vectors.isEmpty()) {
+            println("Skipping: test vectors not available")
+            return
+        }
+
+        var successCount = 0
+
+        for ((idx, vector) in vectors.withIndex()) {
+            try {
+                val bitmap = parseUnicodeQR(vector.out)
+                val image = bitmapToImage(bitmap, modulePixels = 10)
+                val decoded = QRDecoder.decode(image)
+
+                if (decoded == vector.text) {
+                    successCount++
+                }
+            } catch (e: Exception) {
+                // fail silently
+            }
+        }
+
+        val passRate = successCount.toDouble() / vectors.size * 100
+        println("First 500 vectors: $successCount / ${vectors.size} passed (${String.format("%.2f", passRate)}%)")
+    }
+
+    // Note: Vector [53] fails in both JS and Kotlin with InvalidVersionException
+    // This is because the QR data contains a pattern at row 12 that matches the
+    // 1:1:3:1:1 finder pattern ratio, causing a false positive in finder detection.
+    // This is a limitation of the decoder algorithm, not a Kotlin-specific bug.
 }
