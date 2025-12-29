@@ -5,7 +5,7 @@ package qr
  *
  * @property width Image width in pixels
  * @property height Image height in pixels
- * @property data Raw pixel data in RGB or RGBA format
+ * @property data Raw pixel data in Grayscale, RGB, or RGBA format
  */
 data class Image(
     val width: Int,
@@ -19,12 +19,12 @@ data class Image(
     }
 
     /**
-     * Returns the number of bytes per pixel (3 for RGB, 4 for RGBA).
+     * Returns the number of bytes per pixel (1 for Grayscale, 3 for RGB, 4 for RGBA).
      */
     val bytesPerPixel: Int
         get() {
             val perPixel = data.size / (width * height)
-            require(perPixel == 3 || perPixel == 4) {
+            require(perPixel == 1 || perPixel == 3 || perPixel == 4) {
                 "Unknown image format, bytes per pixel=$perPixel"
             }
             return perPixel

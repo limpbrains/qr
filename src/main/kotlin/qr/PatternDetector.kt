@@ -50,15 +50,21 @@ object PatternDetector {
      */
     fun toBitmap(img: Image, thresholdOffset: Int = 0): Bitmap {
         val bytesPerPixel = img.bytesPerPixel
-        val brightness = IntArray(img.height * img.width)
+        val pixelCount = img.height * img.width
 
         // Calculate brightness for each pixel
-        var idx = 0
-        for (i in img.data.indices step bytesPerPixel) {
-            val r = img.data[i].toInt() and 0xFF
-            val g = img.data[i + 1].toInt() and 0xFF
-            val b = img.data[i + 2].toInt() and 0xFF
-            brightness[idx++] = ((r + 2 * g + b) / 4) and 0xFF
+        val brightness = if (bytesPerPixel == 1) {
+            // Grayscale: data IS brightness (Y plane from YUV)
+            IntArray(pixelCount) { img.data[it].toInt() and 0xFF }
+        } else {
+            // RGB/RGBA: weighted average
+            IntArray(pixelCount) { idx ->
+                val i = idx * bytesPerPixel
+                val r = img.data[i].toInt() and 0xFF
+                val g = img.data[i + 1].toInt() and 0xFF
+                val b = img.data[i + 2].toInt() and 0xFF
+                ((r + 2 * g + b) / 4) and 0xFF
+            }
         }
 
         val block = GRAYSCALE_BLOCK_SIZE
