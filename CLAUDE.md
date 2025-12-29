@@ -31,12 +31,13 @@ src/main/kotlin/qr/
 └── Interleave.kt     # Block interleaving for RS codes
 
 src/test/kotlin/qr/
-├── VectorTest.kt     # Integration tests using qr-code-vectors
-├── QRDecoderTest.kt  # Decoder API tests
-├── QRInfoTest.kt     # QR constants/tables tests
-├── BitmapTest.kt     # Bitmap operations tests
-├── GaloisFieldTest.kt # GF math tests
-└── ReedSolomonTest.kt # RS codec tests
+├── VectorTest.kt       # Integration tests using qr-code-vectors
+├── ImageDecodingTest.kt # JPEG image decoding tests
+├── QRDecoderTest.kt    # Decoder API tests
+├── QRInfoTest.kt       # QR constants/tables tests
+├── BitmapTest.kt       # Bitmap operations tests
+├── GaloisFieldTest.kt  # GF math tests
+└── ReedSolomonTest.kt  # RS codec tests
 ```
 
 ## Key Components
@@ -62,7 +63,7 @@ src/test/kotlin/qr/
 ## Test Vectors
 
 Test vectors are loaded from `test/vectors/` (git submodule from paulmillr/qr-code-vectors):
-- `small-vectors.json.gz`: ASCII-art QR codes for encoding tests
+- `small-vectors.json.gz`: ASCII-art QR codes for decoding tests
 - `boofcv-v3/`: JPEG images for real-world decoding tests
 
 The `VectorTest.kt` uses a streaming JSON parser to avoid memory issues with the large vector file.
@@ -74,89 +75,47 @@ The `VectorTest.kt` uses a streaming JSON parser to avoid memory issues with the
 
 ## Known Limitations
 
-- Decoder works best with Version 1-2 QR codes (smaller codes)
-- Higher version QR codes may fail pattern detection
-- No support for Kanji encoding mode
+- No support for Kanji/ECI encoding modes
+- Higher version QR codes (Version 10+) may have lower success rates
 
-## JS vs Kotlin Parity
+## Test Results
 
-**Current status**:
-- **Small vectors (ASCII art QR)**: 9133/9281 (98.41%) ✅ **Exceeds JS parity**
-- **JPEG images (boofcv)**: 104/118 (88.14%)
+| Test Suite | Pass Rate |
+|------------|-----------|
+| Small vectors (synthetic) | 9133/9281 (98.41%) |
+| JPEG images (boofcv) | 102/118 (86.44%) |
 
-### Small Vector Test Results
+## Differences from JavaScript Implementation
 
-Tested both JS and Kotlin decoders on the same synthetic QR codes (from ASCII art):
-- JS: 497/500 (99.40%) on first 500 vectors
-- Kotlin: 497/500 (99.40%) on first 500 vectors
+### 1. Triangle Validation (Kotlin-only)
 
-The failing vectors (e.g., [53], [231]) fail in **both** JS and Kotlin with the same errors.
-This confirms the Kotlin port is correct - the failures are inherent to the decoder algorithm
-when QR data happens to contain patterns that look like finder patterns.
+Before early termination in finder detection, Kotlin validates that 3 patterns form a valid right isosceles triangle (ratio > 0.8). This prevents false positives when QR data contains 1:1:3:1:1-like patterns.
 
-### JPEG Decoder Differences
+**Location**: `PatternDetector.kt:384-401`
 
-JS (jpeg-js) and Kotlin (ImageIO) use different JPEG decoders that produce slightly different pixel values:
-- **JS:** r=125, g=112, b=110, brightness=114
-- **Kotlin:** r=126, g=112, b=112, brightness=115
+**Trade-off**: +83 synthetic vectors, -2 JPEG images vs JS behavior.
 
-This 1-2 pixel difference propagates through:
-1. Brightness calculation → 2. Block averages → 3. Binary bitmap → 4. Finder positions → 5. Perspective transform → 6. Bit extraction → 7. RS.decode errors
+### 2. Threshold Retry
 
-### Solutions Implemented
+To compensate for JPEG decoder differences (jpeg-js vs ImageIO), `QRDecoder` retries with offsets `[0, -5, 5]`.
 
-1. **Threshold adjustment for borderline pixels** (ENABLED)
-   - Added `thresholdOffset` parameter to `PatternDetector.toBitmap()`
-   - Retry logic in `QRDecoder.decode()` tries offsets `[0, -5, 5]`
-   - Testing showed best efficiency with `[0, -5, 5]`: 104/118 (88.14%) with only 3 attempts
-   - Full range `[0, ..., 5, -5]` achieves 107/118 (90.68%) but needs 11 attempts
-   - To adjust: modify `THRESHOLD_OFFSETS` in `QRDecoder.kt`
+**Location**: `QRDecoder.kt:21`
 
-2. **More robust finder detection** (IMPLEMENTED)
-   - Added retry logic in `PatternDetector.findFinder()` with relaxed variance parameters
-   - Tries normal variance (2.0), then lenient (2.5), then very lenient (3.0) with lower confirmations
-   - Helps detect finder patterns in degraded or blurry images
+| Offsets | Pass Rate |
+|---------|-----------|
+| `[0]` | 95/118 (80.51%) |
+| `[0, -5, 5]` | 102/118 (86.44%) |
 
-3. **Triangle validation before early termination** (IMPLEMENTED)
-   - Before stopping after finding 3 patterns, validates they form a right isoceles triangle
-   - Checks that the ratio of two shorter sides is > 0.8
-   - Prevents false positives when QR data accidentally contains 1:1:3:1:1 patterns
-   - Improved small vector pass rate from 97.51% to 98.41% (+83 vectors)
+### 3. Relaxed Finder Variance
 
-4. **3rd pattern estimation** (TESTED - not effective)
-   - Tried estimating 3rd finder pattern position from 2 found patterns
-   - Converts FinderNotFound to RS.decode errors (no net improvement)
-   - Estimated positions not accurate enough for perspective transform
+Finder detection retries with progressively relaxed variance parameters (2.0 → 2.5 → 3.0) to handle degraded images.
 
-### Remaining Failures (14 tests)
+**Location**: `PatternDetector.kt:229-246`
 
-- 8 RS.decode errors: Perspective transform or bit extraction issues
-- 3 FinderNotFound: Images too degraded (len=0) or partial patterns (len=1-2)
-- 3 InvalidFormat/Version: Format pattern reading errors
+## Key Files for Modifications
 
-### Threshold Retry Results
-
-| Offsets | Attempts | Pass Rate |
-|---------|----------|-----------|
-| `[0]` | 1 | 97/118 (82.20%) |
-| `[0, 1, -1]` | 3 | 101/118 (85.59%) |
-| `[0, -5, 5]` (current) | 3 | 104/118 (88.14%) |
-| `[0, 1, -1, 2, -2]` | 5 | 103/118 (87.29%) |
-| `[0, ..., 5, -5]` | 11 | 107/118 (90.68%) |
-
-### Possible Further Improvements
-
-1. **Use full threshold range** - `[0, ..., 5, -5]` for 90.68% (11 attempts)
-
-2. **Multiple perspective transform attempts**
-   - If RS.decode fails, try slightly adjusted transform points
-   - Use alignment pattern candidates with small offsets
-
-3. **Use same JPEG decoder**
-   - Port jpeg-js to Kotlin or use a common library for perfect parity
-
-### Key Files for Parity Work
-- `PatternDetector.kt:toBitmap()` - Binary thresholding (threshold adjustment here)
-- `PatternDetector.kt:findFinder()` - Finder pattern detection (robustness here)
-- `QRDecoder.kt:decode()` - Entry point (retry logic here)
-- `Transform.kt:transform()` - Perspective transform
+- `QRDecoder.kt` - Entry point, threshold retry logic
+- `PatternDetector.kt` - Pattern detection, triangle validation, thresholding
+- `Transform.kt` - Perspective transformation
+- `BitDecoder.kt` - Data extraction and parsing
+- `ReedSolomon.kt` - Error correction

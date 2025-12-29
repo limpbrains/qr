@@ -90,58 +90,66 @@ try {
 ## Project Structure
 
 ```
-qr/
-├── src/main/kotlin/qr/
-│   ├── QRDecoder.kt        # Main public API
-│   ├── Image.kt            # Image data class
-│   ├── Types.kt            # Point, Pattern, enums, exceptions
-│   ├── Bitmap.kt           # 2D bitmap class
-│   ├── PatternDetector.kt  # Finder/alignment pattern detection
-│   ├── Transform.kt        # Perspective transformation
-│   ├── BitDecoder.kt       # Data extraction
-│   ├── QRInfo.kt           # QR constants/tables
-│   ├── GaloisField.kt      # GF(256) math
-│   ├── ReedSolomon.kt      # Error correction
-│   └── Interleave.kt       # Block interleaving
-├── src/test/kotlin/qr/
-│   └── *.kt                # Unit and integration tests
-└── test/vectors/           # Test vectors (git submodule)
+src/main/kotlin/qr/
+├── QRDecoder.kt        # Main public API (entry point)
+├── Image.kt            # Image data class
+├── Types.kt            # Point, Pattern, enums, exceptions
+├── Bitmap.kt           # 2D bitmap class
+├── PatternDetector.kt  # Finder/alignment pattern detection
+├── Transform.kt        # Perspective transformation
+├── BitDecoder.kt       # Data extraction
+├── QRInfo.kt           # QR constants/tables
+├── GaloisField.kt      # GF(256) math
+├── ReedSolomon.kt      # Error correction
+└── Interleave.kt       # Block interleaving
+
+src/test/kotlin/qr/
+└── *.kt                # Unit and integration tests
+
+test/vectors/           # Test vectors (git submodule)
 ```
 
 ## License
 
 MIT License - see [LICENSE](LICENSE)
 
-## JS vs Kotlin Parity
+## Differences from JavaScript Implementation
 
-This Kotlin library is a port of the JavaScript [paulmillr/qr](https://github.com/paulmillr/qr) library.
+This Kotlin library is a port of the JavaScript [paulmillr/qr](https://github.com/paulmillr/qr) library with the following differences:
 
-### Test Results
-- **Small vectors (ASCII art QR)**: 9133/9281 (98.41%)
-- **JPEG images (boofcv)**: 104/118 (88.14%)
+### 1. Triangle Validation for Finder Patterns (Kotlin-only enhancement)
 
-### JPEG Decoder Differences
+Before stopping early during finder pattern detection, the Kotlin implementation validates that the 3 found patterns form a valid right isosceles triangle (ratio of two shorter sides > 0.8). This prevents false positives when QR data accidentally contains patterns matching the 1:1:3:1:1 finder ratio.
 
-The JS and Kotlin implementations use different JPEG decoders (jpeg-js vs ImageIO) that produce slightly different pixel values. For example, at the same pixel:
-- **JS:** r=125, g=112, b=110
-- **Kotlin:** r=126, g=112, b=112
+**Impact:** +83 synthetic QR codes decoded correctly, -2 JPEG images.
 
-This 1-2 pixel difference propagates through the decoding pipeline and can cause failures on edge cases where thresholds are borderline.
+### 2. Threshold Retry for JPEG Decoder Differences
 
-### Threshold Retry (Enabled)
-
-To compensate for JPEG decoder differences, `QRDecoder` retries with different threshold offsets. Testing showed:
-
-| Offsets | Attempts | Pass Rate |
-|---------|----------|-----------|
-| `[0]` | 1 | 97/118 (82.20%) |
-| `[0, -5, 5]` (current) | 3 | 104/118 (88.14%) |
-| `[0, ..., 5, -5]` | 11 | 107/118 (90.68%) |
+JS (jpeg-js) and Kotlin (ImageIO) JPEG decoders produce slightly different pixel values (1-2 pixel brightness difference). To compensate, `QRDecoder` retries with threshold offsets `[0, -5, 5]`.
 
 To adjust, modify `THRESHOLD_OFFSETS` in `QRDecoder.kt`.
 
+### 3. No Kanji/ECI Encoding Support
+
+Same as the JS library - Kanji and ECI encoding modes are not supported.
+
+## Test Results
+
+Tested against [paulmillr/qr-code-vectors](https://github.com/paulmillr/qr-code-vectors):
+
+| Test Suite | Pass Rate |
+|------------|-----------|
+| Small vectors (synthetic ASCII art QR) | 9133/9281 (98.41%) |
+| JPEG images (boofcv-v3) | 102/118 (86.44%) |
+
+### JPEG Threshold Comparison
+
+| Offsets | Attempts | Pass Rate |
+|---------|----------|-----------|
+| `[0]` | 1 | 95/118 (80.51%) |
+| `[0, -5, 5]` (default) | 3 | 102/118 (86.44%) |
+
 ## Acknowledgments
 
-This is a Kotlin port of Paul Miller's [paulmillr/qr](https://github.com/paulmillr/qr) JavaScript QR code library.
-
-Test vectors from [paulmillr/qr-code-vectors](https://github.com/paulmillr/qr-code-vectors).
+- Original JavaScript library: [paulmillr/qr](https://github.com/paulmillr/qr) by Paul Miller
+- Test vectors: [paulmillr/qr-code-vectors](https://github.com/paulmillr/qr-code-vectors)
