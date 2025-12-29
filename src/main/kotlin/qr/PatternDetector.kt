@@ -427,13 +427,13 @@ object PatternDetector {
                     runs.fill(0)
                     pos = 0
                 } else {
-                    // Shift runs by 2
+                    // Shift runs by 2 (matching JS: res.shift(runs, 2); pos = res.length - 2)
                     runs[0] = runs[2]
                     runs[1] = runs[3]
                     runs[2] = runs[4]
                     runs[3] = 0
                     runs[4] = 0
-                    pos = 2
+                    pos = 3  // FINDER.length - 2 = 5 - 2 = 3
                     runs[pos]++
                 }
                 x++
@@ -641,11 +641,11 @@ object PatternDetector {
                     }
                 }
 
-                // Shift runs by 2 (matching JS: res.shift(runs, 2))
+                // Shift runs by 2 (matching JS: res.shift(runs, 2); pos = res.length - 2)
                 runs[0] = runs[2]
                 runs[1] = 0
                 runs[2] = 0
-                pos = 0
+                pos = 1  // ALIGNMENT.length - 2 = 3 - 2 = 1
                 runs[pos]++
                 x++
             }

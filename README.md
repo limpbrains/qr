@@ -139,15 +139,8 @@ Tested against [paulmillr/qr-code-vectors](https://github.com/paulmillr/qr-code-
 
 | Test Suite | Pass Rate |
 |------------|-----------|
-| Small vectors (synthetic ASCII art QR) | 9133/9281 (98.41%) |
-| JPEG images (boofcv-v3) | 102/118 (86.44%) |
-
-### JPEG Threshold Comparison
-
-| Offsets | Attempts | Pass Rate |
-|---------|----------|-----------|
-| `[0]` | 1 | 95/118 (80.51%) |
-| `[0, -5, 5]` (default) | 3 | 102/118 (86.44%) |
+| Small vectors (synthetic ASCII art QR) | 9134/9281 (98.42%) |
+| JPEG images (boofcv-v3) | 113/118 (95.76%) |
 
 ## Acknowledgments
 

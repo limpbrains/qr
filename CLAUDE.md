@@ -82,8 +82,8 @@ The `VectorTest.kt` uses a streaming JSON parser to avoid memory issues with the
 
 | Test Suite | Pass Rate |
 |------------|-----------|
-| Small vectors (synthetic) | 9133/9281 (98.41%) |
-| JPEG images (boofcv) | 102/118 (86.44%) |
+| Small vectors (synthetic) | 9134/9281 (98.42%) |
+| JPEG images (boofcv) | 113/118 (95.76%) |
 
 ## Differences from JavaScript Implementation
 
@@ -93,18 +93,11 @@ Before early termination in finder detection, Kotlin validates that 3 patterns f
 
 **Location**: `PatternDetector.kt:384-401`
 
-**Trade-off**: +83 synthetic vectors, -2 JPEG images vs JS behavior.
-
 ### 2. Threshold Retry
 
 To compensate for JPEG decoder differences (jpeg-js vs ImageIO), `QRDecoder` retries with offsets `[0, -5, 5]`.
 
 **Location**: `QRDecoder.kt:21`
-
-| Offsets | Pass Rate |
-|---------|-----------|
-| `[0]` | 95/118 (80.51%) |
-| `[0, -5, 5]` | 102/118 (86.44%) |
 
 ### 3. Relaxed Finder Variance
 
