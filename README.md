@@ -182,10 +182,6 @@ src/test/kotlin/qr/
 test/vectors/           # Test vectors (git submodule)
 ```
 
-## License
-
-MIT License - see [LICENSE](LICENSE)
-
 ## Differences from JavaScript Implementation
 
 This Kotlin library is a port of the JavaScript [paulmillr/qr](https://github.com/paulmillr/qr) library with the following differences:
@@ -219,3 +215,20 @@ Tested against [paulmillr/qr-code-vectors](https://github.com/paulmillr/qr-code-
 
 - Original JavaScript library: [paulmillr/qr](https://github.com/paulmillr/qr) by Paul Miller
 - Test vectors: [paulmillr/qr-code-vectors](https://github.com/paulmillr/qr-code-vectors)
+
+## License
+
+Copyright (c) 2023 Paul Miller [(paulmillr.com)](https://paulmillr.com)
+
+Copyright (c) 2019 ZXing authors
+
+The library is dual-licensed under the Apache 2.0 OR MIT license.
+You can select a license of your choice.
+
+The library is derived from ZXing, which is licensed under Apache 2.0.
+
+QR Code is trademarked by DENSO WAVE INCORPORATED.
+The word "QR Code" used in this project is for identification purposes only.
+
+The specification is not covered by any known patents:
+QR Code was patented, but Denso Wave chose not to exercise those rights.
