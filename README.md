@@ -218,6 +218,8 @@ Tested against [paulmillr/qr-code-vectors](https://github.com/paulmillr/qr-code-
 
 ## License
 
+Copyright (c) 2025 limpbrains
+
 Copyright (c) 2023 Paul Miller [(paulmillr.com)](https://paulmillr.com)
 
 Copyright (c) 2019 ZXing authors
