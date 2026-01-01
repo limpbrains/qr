@@ -32,7 +32,7 @@ Then add the dependency:
 
 ```kotlin
 dependencies {
-    implementation("com.github.limpbrains:qr:v0.0.1")
+    implementation("com.github.limpbrains:qr:TAG")
 }
 ```
 
@@ -40,9 +40,11 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'com.github.limpbrains:qr:v0.0.1'
+    implementation 'com.github.limpbrains:qr:TAG'
 }
 ```
+
+Replace `TAG` with the latest release tag (e.g., `v0.0.1`).
 
 ## Usage
 
