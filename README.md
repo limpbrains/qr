@@ -152,6 +152,8 @@ try {
 ## Building from Source
 
 ```bash
+git submodule update --init --recursive
+
 # Build
 ./gradlew build
 
