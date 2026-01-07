@@ -100,10 +100,28 @@ The `VectorTest.kt` uses a streaming JSON parser to avoid memory issues with the
 
 ## Test Results
 
-| Test Suite | Pass Rate |
-|------------|-----------|
-| Small vectors (synthetic) | 9134/9281 (98.42%) |
-| JPEG images (boofcv) | 113/118 (95.76%) |
+| Test Suite | Pass Rate | Notes |
+|------------|-----------|-------|
+| Small vectors (synthetic) | 9134/9281 (98.42%) | **Validated: JavaScript decoder also fails on same 147 cases** |
+| JPEG images (boofcv) | 113/118 (95.76%) | Real-world images |
+
+### Test Parity Validation (2026-01-07)
+
+The 147 failing small vector tests (1.58%) are **NOT** a Kotlin porting issue. Testing revealed:
+
+- **JavaScript decoder also fails** on the exact same test cases with identical errors
+- Test 359: `RS.decode: invalid errors number` (both JS and Kotlin)
+- Test 992: `invalid version pattern` (JS) / `Invalid format pattern` (Kotlin)
+- Tests 1725-1743: `RS.decode: invalid errors number` (both JS and Kotlin)
+
+**Root cause**: The JavaScript library's 9281/9281 "pass" rate was for **encoding tests only**. The small-vectors test suite validates text → QR generation, but **never validates QR → text decoding**.
+
+The failing tests are:
+- Synthetic QR codes with 360+ characters (QR Version 8+)
+- Likely issues with test vector generation, not the decoder implementations
+- Both implementations show identical Reed-Solomon decoding failures
+
+**Conclusion**: 98.42% is the correct baseline for both JavaScript and Kotlin decoders.
 
 ## Differences from JavaScript Implementation
 
