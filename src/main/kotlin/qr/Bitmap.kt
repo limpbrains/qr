@@ -223,6 +223,20 @@ class Bitmap private constructor(
     }
 
     /**
+     * Negate all pixels in the bitmap (invert black/white).
+     * Useful for detecting inverted QR codes.
+     * null values remain null.
+     */
+    fun negate(): Bitmap {
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                data[y][x] = data[y][x]?.not()
+            }
+        }
+        return this
+    }
+
+    /**
      * Convert bitmap to Image (RGBA format).
      */
     fun toImage(isRGB: Boolean = false): Image {

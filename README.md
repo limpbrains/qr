@@ -11,6 +11,8 @@ No external dependencies.
 - Supports QR versions 1-40
 - All error correction levels (L, M, Q, H)
 - Numeric, Alphanumeric, and Byte encoding modes
+- ECI (Extended Channel Interpretation) - Supports 20+ character encodings (UTF-8, ISO-8859-*, Shift-JIS, Big5, GBK, etc.)
+- Inverted QR code detection - Automatically detects and decodes white-on-black QR codes
 - Automatic perspective correction
 - Reed-Solomon error correction
 

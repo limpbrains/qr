@@ -69,6 +69,17 @@ Format is auto-detected from `data.size / (width * height)`.
 - Reed-Solomon encoding/decoding
 - Supports all QR ECC levels (L/M/Q/H)
 
+### ECI (Extended Channel Interpretation) Support
+- Supports 20+ character encodings (ISO-8859-*, UTF-8, UTF-16BE, Shift-JIS, Big5, GBK, EUC-KR, Windows-125x)
+- Automatic charset detection and decoding based on ECI indicator
+- Default UTF-8 for backward compatibility
+- **Location**: `BitDecoder.kt` (`eciToEncoding` map, `decodeWithEci()` function)
+
+### Inverted QR Code Support
+- Automatically detects and decodes inverted (white-on-black) QR codes
+- If normal detection fails, retries with negated bitmap
+- **Location**: `PatternDetector.kt:769-780`, `Bitmap.kt:225-237` (negate method)
+
 ## Test Vectors
 
 Test vectors are loaded from `test/vectors/` (git submodule from paulmillr/qr-code-vectors):
@@ -84,7 +95,7 @@ The `VectorTest.kt` uses a streaming JSON parser to avoid memory issues with the
 
 ## Known Limitations
 
-- No support for Kanji/ECI encoding modes
+- No support for Kanji encoding mode
 - Higher version QR codes (Version 10+) may have lower success rates
 
 ## Test Results
