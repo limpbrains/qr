@@ -766,7 +766,18 @@ object PatternDetector {
      * Detect the QR code in a bitmap and return the extracted bits and finder points.
      */
     fun detect(b: Bitmap): Pair<Bitmap, List<Pattern>> {
-        val (bl, tl, tr) = findFinder(b)
+        // Try to find finder patterns. If not found, try with inverted bitmap (for inverted QR codes)
+        val (bl, tl, tr) = try {
+            findFinder(b)
+        } catch (e: Exception) {
+            try {
+                b.negate()
+                findFinder(b)
+            } catch (e2: Exception) {
+                b.negate() // undo negate
+                throw e
+            }
+        }
         val moduleSize = (moduleSizeAvg(b, tl.toPoint(), tr.toPoint()) +
                 moduleSizeAvg(b, tl.toPoint(), bl.toPoint())) / 2
 

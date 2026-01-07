@@ -1,5 +1,6 @@
 package qr
 
+import java.nio.charset.Charset
 import kotlin.math.abs
 
 /**
@@ -8,6 +9,52 @@ import kotlin.math.abs
 object BitDecoder {
 
     private const val MAX_BITS_ERROR = 3
+
+    /**
+     * ECI (Extended Channel Interpretation) code to charset name mapping.
+     * Common encodings used in QR codes.
+     */
+    private val eciToEncoding = mapOf(
+        1 to "ISO-8859-1",
+        2 to "IBM437",
+        3 to "ISO-8859-1",
+        4 to "ISO-8859-2",
+        5 to "ISO-8859-3",
+        6 to "ISO-8859-4",
+        7 to "ISO-8859-5",
+        8 to "ISO-8859-6",
+        9 to "ISO-8859-7",
+        10 to "ISO-8859-8",
+        11 to "ISO-8859-9",
+        13 to "ISO-8859-11",
+        15 to "ISO-8859-13",
+        16 to "ISO-8859-14",
+        17 to "ISO-8859-15",
+        18 to "ISO-8859-16",
+        20 to "Shift_JIS",
+        21 to "windows-1250",
+        22 to "windows-1251",
+        23 to "windows-1252",
+        24 to "windows-1256",
+        25 to "UTF-16BE",
+        26 to "UTF-8",
+        28 to "Big5",
+        29 to "GBK",
+        30 to "EUC-KR"
+    )
+
+    /**
+     * Decode bytes using specified ECI encoding.
+     */
+    private fun decodeWithEci(bytes: ByteArray, eci: Int = 26): String {
+        val encoding = eciToEncoding[eci]
+            ?: throw QRDecodingException("Unsupported ECI: $eci")
+        return try {
+            String(bytes, Charset.forName(encoding))
+        } catch (e: Exception) {
+            throw QRDecodingException("Failed to decode with ECI $eci ($encoding): ${e.message}")
+        }
+    }
 
     private data class InfoBits(
         val version1: Int,
@@ -202,6 +249,7 @@ object BitDecoder {
 
         // Parse segments
         val result = StringBuilder()
+        var eci = 26 // Default to UTF-8 for compatibility with old behavior
 
         fun readBits(n: Int): String {
             if (n > bits.length) throw QRDecodingException("Not enough bits")
@@ -228,6 +276,17 @@ object BitDecoder {
                 ?: throw QRDecodingException("Unknown modeBits=$modeBits result=\"$result\"")
 
             if (mode == "terminator") break
+
+            // Handle ECI mode (Extended Channel Interpretation)
+            if (mode == "eci") {
+                val first = toNum(readBits(8))
+                eci = when {
+                    (first and 0x80) == 0 -> first
+                    (first and 0xc0) == 0x80 -> ((first and 0x3f) shl 8) or toNum(readBits(8))
+                    else -> ((first and 0x1f) shl 16) or toNum(readBits(16))
+                }
+                continue // ECI doesn't carry data, just sets state
+            }
 
             val type = when (mode) {
                 "numeric" -> EncodingType.NUMERIC
@@ -272,11 +331,11 @@ object BitDecoder {
                 }
 
                 "byte" -> {
-                    val utf8 = ByteArray(count)
+                    val data = ByteArray(count)
                     for (i in 0 until count) {
-                        utf8[i] = toNum(readBits(8)).toByte()
+                        data[i] = toNum(readBits(8)).toByte()
                     }
-                    result.append(utf8.toString(Charsets.UTF_8))
+                    result.append(decodeWithEci(data, eci))
                 }
             }
         }
