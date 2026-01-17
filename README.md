@@ -223,6 +223,7 @@ Tested against [paulmillr/qr-code-vectors](https://github.com/paulmillr/qr-code-
 
 - Original JavaScript library: [paulmillr/qr](https://github.com/paulmillr/qr) by Paul Miller
 - Test vectors: [paulmillr/qr-code-vectors](https://github.com/paulmillr/qr-code-vectors)
+- For React Native, use [react-native-camera-kit-no-google](https://github.com/limpbrains/react-native-camera-kit-no-google) for high-performance camera scanning.
 
 ## License
 
