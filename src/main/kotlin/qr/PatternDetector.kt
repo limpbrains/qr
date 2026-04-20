@@ -46,39 +46,72 @@ object PatternDetector {
 
     /**
      * Convert an image to a binary bitmap using adaptive thresholding.
+     *
+     * Ported from qr-paulmillr src/decode.ts (commit dd46f5b) — the correctness-affecting
+     * parts of the "Speed-up decoding 4x" rewrite. JS-specific typed-array perf tricks
+     * (SUM16/MIN16/MAX16 LUTs, Uint32Array aliasing, packed Bitmap writes) are not ported.
+     *
      * @param thresholdOffset Offset added to threshold comparison (0 = normal, negative = more dark pixels, positive = more light pixels)
      */
     fun toBitmap(img: Image, thresholdOffset: Int = 0): Bitmap {
+        val width = img.width
+        val height = img.height
+        val data = img.data
         val bytesPerPixel = img.bytesPerPixel
-        val pixelCount = img.height * img.width
+        val pixelCount = height * width
 
-        // Calculate brightness for each pixel
+        // Brightness: grayscale is direct-copy (Kotlin-only Y-plane pass-through),
+        // RGB/RGBA use the weighted average (r + 2*g + b) / 4.
         val brightness = if (bytesPerPixel == 1) {
-            // Grayscale: data IS brightness (Y plane from YUV)
-            IntArray(pixelCount) { img.data[it].toInt() and 0xFF }
+            IntArray(pixelCount) { data[it].toInt() and 0xFF }
         } else {
-            // RGB/RGBA: weighted average
             IntArray(pixelCount) { idx ->
                 val i = idx * bytesPerPixel
-                val r = img.data[i].toInt() and 0xFF
-                val g = img.data[i + 1].toInt() and 0xFF
-                val b = img.data[i + 2].toInt() and 0xFF
-                ((r + 2 * g + b) / 4) and 0xFF
+                val r = data[i].toInt() and 0xFF
+                val g = data[i + 1].toInt() and 0xFF
+                val b = data[i + 2].toInt() and 0xFF
+                (r + 2 * g + b) / 4
             }
         }
 
-        val block = GRAYSCALE_BLOCK_SIZE
-        if (img.width < block * 5 || img.height < block * 5) {
-            throw ImageTooSmallException("Image too small: ${img.width}x${img.height}")
+        // Sampled color spread as a cheap scene-type signal. For grayscale input there
+        // is no per-pixel R/G/B spread to measure, so disable chroma/scene heuristics
+        // (every threshold that depends on spreadMean is guarded by > 8 / > 10 / > 30).
+        val spreadMean: Double = if (bytesPerPixel == 1) {
+            0.0
+        } else {
+            val step = bytesPerPixel * 16
+            var sSum = 0
+            var sCnt = 0
+            var i = 0
+            while (i + 2 < data.size) {
+                val r = data[i].toInt() and 0xFF
+                val g = data[i + 1].toInt() and 0xFF
+                val b = data[i + 2].toInt() and 0xFF
+                val hi = if (r > g) (if (r > b) r else b) else (if (g > b) g else b)
+                val lo = if (r < g) (if (r < b) r else b) else (if (g < b) g else b)
+                sSum += hi - lo
+                sCnt++
+                i += step
+            }
+            if (sCnt == 0) 0.0 else sSum.toDouble() / sCnt
         }
 
-        val bWidth = ceil(img.width / block.toDouble()).toInt()
-        val bHeight = ceil(img.height / block.toDouble()).toInt()
-        val maxY = img.height - block
-        val maxX = img.width - block
-        val blocks = IntArray(bWidth * bHeight)
+        val block = GRAYSCALE_BLOCK_SIZE
+        if (width < block * 5 || height < block * 5) {
+            throw ImageTooSmallException("Image too small: ${width}x${height}")
+        }
 
-        // Calculate average brightness per block
+        val bWidth = ceil(width / block.toDouble()).toInt()
+        val bHeight = ceil(height / block.toDouble()).toInt()
+        val maxY = height - block
+        val maxX = width - block
+        val blockLen = bWidth * bHeight
+
+        // Per-block stats packed as (bits 0..7 = baseline avg, 8..15 = min, 16..23 = max).
+        val blockState = IntArray(blockLen)
+        var hiRangeCnt = 0
+        var veryLowCnt = 0
         for (by in 0 until bHeight) {
             val yPos = cap(by * block, 0, maxY)
             for (bx in 0 until bWidth) {
@@ -86,60 +119,175 @@ object PatternDetector {
                 var sum = 0
                 var minB = 0xFF
                 var maxB = 0
-
                 for (yy in 0 until block) {
-                    val rowOffset = (yPos + yy) * img.width + xPos
+                    val rowOff = (yPos + yy) * width + xPos
                     for (xx in 0 until block) {
-                        val pixel = brightness[rowOffset + xx]
-                        sum += pixel
-                        minB = min(minB, pixel)
-                        maxB = max(maxB, pixel)
+                        val p = brightness[rowOff + xx]
+                        sum += p
+                        if (p < minB) minB = p
+                        if (p > maxB) maxB = p
                     }
                 }
-
-                var average = floor(sum / (block * block).toDouble())
-                if (maxB - minB <= GRAYSCALE_RANGE) {
-                    average = minB / 2.0
+                val range = maxB - minB
+                var average = sum ushr 6  // sum / 64; 8x8 block = 64 samples
+                if (range <= GRAYSCALE_RANGE) {
+                    // Low-contrast blocks are unstable if thresholded from their raw mean.
+                    // Bias toward the local dark floor, then smooth with already-seen
+                    // neighbors so finder rings don't disappear in washed-out regions.
+                    average = minB / 2
                     if (by > 0 && bx > 0) {
-                        val prev = (blocks[(by - 1) * bWidth + bx] +
-                                2 * blocks[by * bWidth + bx - 1] +
-                                blocks[(by - 1) * bWidth + bx - 1]) / 4.0
-                        if (minB < prev) average = prev
+                        val neighborNumerator =
+                            (blockState[(by - 1) * bWidth + bx] and 0xFF) +
+                            2 * (blockState[by * bWidth + (bx - 1)] and 0xFF) +
+                            (blockState[(by - 1) * bWidth + (bx - 1)] and 0xFF)
+                        // Integer form of JS "min < neighborNumerator / 4".
+                        if (minB * 4 < neighborNumerator) average = neighborNumerator / 4
                     }
                 }
-                // JS uses int() which truncates towards 0 (unsigned right shift by 0)
-                blocks[bWidth * by + bx] = average.toInt()
+                blockState[bWidth * by + bx] =
+                    (average and 0xFF) or (minB shl 8) or (maxB shl 16)
+                if (range > 40 && average < 224) hiRangeCnt++
+                if (range <= 10) veryLowCnt++
             }
         }
 
-        // Create bitmap using 5x5 block averaging
-        val matrix = Bitmap(img.width, img.height)
+        val hiRangeFrac = hiRangeCnt.toDouble() / blockLen
+        val veryLowFrac = veryLowCnt.toDouble() / blockLen
+        // Scene gates:
+        // - spotBias darkens globally flat, slightly colorful scenes that otherwise
+        //   miss bright-spot / washed-out QR modules.
+        // - useVarField avoids paying the variance-field cost on scenes where the
+        //   plain 5x5 mean is already stable enough.
+        val spotBias =
+            if (veryLowFrac > 0.55 && veryLowFrac < 0.66 &&
+                hiRangeFrac < 0.02 &&
+                spreadMean > 10 && spreadMean < 20
+            ) -1 else 0
+        val useVarField = veryLowFrac < 0.62 || spreadMean > 30
+
+        // Integral images over block means (iWidth x iHeight, padded with a zero
+        // first row/col). `integ` is the standard summed-area table; `integSqr` is
+        // the sum-of-squares SAT used to derive variance, only built when useVarField.
+        // Float32 mirrors JS Float32Array (precision-sensitive).
+        val iWidth = bWidth + 1
+        val iHeight = bHeight + 1
+        val integLen = iHeight * iWidth
+        val integ = IntArray(integLen)
+        val integSqr: FloatArray? = if (useVarField) FloatArray(integLen) else null
+        for (by in 0 until bHeight) {
+            var rowSum = 0
+            var rowSq = 0
+            val bRow = by * bWidth
+            val iRow = (by + 1) * iWidth
+            val iPrev = by * iWidth
+            for (bx in 0 until bWidth) {
+                val v = blockState[bRow + bx] and 0xFF
+                rowSum += v
+                if (integSqr != null) rowSq += v * v
+                integ[iRow + bx + 1] = integ[iPrev + bx + 1] + rowSum
+                if (integSqr != null)
+                    integSqr[iRow + bx + 1] = integSqr[iPrev + bx + 1] + rowSq
+            }
+        }
+
+        val matrix = Bitmap(width, height)
+        val rad = 2
+        val area = (rad * 2 + 1) * (rad * 2 + 1)  // 25
         for (by in 0 until bHeight) {
             val yPos = cap(by * block, 0, maxY)
-            val top = cap(by, 2, bHeight - 3)
+            val top = cap(by, rad, bHeight - rad - 1)
+            val y0 = top - rad
+            val y1 = top + rad
+            val r0 = y0 * iWidth
+            val r1 = (y1 + 1) * iWidth
             for (bx in 0 until bWidth) {
                 val xPos = cap(bx * block, 0, maxX)
-                val left = cap(bx, 2, bWidth - 3)
+                val left = cap(bx, rad, bWidth - rad - 1)
+                val x0 = left - rad
+                val x1 = left + rad
 
-                // 5x5 blocks average (JS uses floating-point division)
-                var sum = 0
-                for (yy in -2..2) {
-                    val y2 = bWidth * (top + yy) + left
-                    for (xx in -2..2) {
-                        sum += blocks[y2 + xx]
+                // 5x5 neighborhood mean over block means via integral image.
+                val sum = integ[r1 + (x1 + 1)] - integ[r0 + (x1 + 1)] -
+                          integ[r1 + x0] + integ[r0 + x0]
+                val average = sum / area
+
+                val blk = blockState[bWidth * by + bx]
+                val blockAvg = blk and 0xFF
+                val minB = (blk ushr 8) and 0xFF
+                val maxB = (blk ushr 16) and 0xFF
+                val range = maxB - minB
+
+                // Fast paths: neighborhood mean below block's minimum → block stays
+                // light; mean at/above maximum → block is fully dark.
+                if (average < minB) continue
+                if (average >= maxB) {
+                    for (yy in 0 until block)
+                        for (xx in 0 until block)
+                            matrix.set(xPos + xx, yPos + yy, true)
+                    continue
+                }
+
+                // localAdj: nudge toward the current block when it is darker than its
+                // neighborhood, preserving locally dark rings/modules diluted by 5x5.
+                var localAdj = (blockAvg - average) shr 4
+                if (localAdj < 0) localAdj = 0
+                if (localAdj > 1) localAdj = 1
+
+                // chromaAdj: in colorful mid-tone blocks, extra darkening where luma
+                // alone underestimates QR structure.
+                var chromaAdj = 0
+                if (range > 6 && average > 48 && average < 232) {
+                    val spreadBoost = if (spreadMean > 8) spreadMean - 8 else 0.0
+                    val mid = 128 - abs(average - 128)
+                    val c = (spreadBoost * (range - 6) * mid) / 2_200_000.0
+                    chromaAdj = c.toInt()
+                    if (chromaAdj > 1) chromaAdj = 1
+                }
+
+                // varAdj: when the surrounding field has real variance, darken more
+                // aggressively if local mean sits far above block minimum — the main
+                // rescue for weak finder cases.
+                var varAdj = 0
+                if (integSqr != null && range >= 6 && range <= 128) {
+                    val sq = integSqr[r1 + (x1 + 1)] - integSqr[r0 + (x1 + 1)] -
+                             integSqr[r1 + x0] + integSqr[r0 + x0]
+                    val meanSq = sq / area.toFloat()
+                    var variance = meanSq - (average * average).toFloat()
+                    if (variance < 0f) variance = 0f
+                    val gap = average - minB
+                    val num = gap * (variance - 196f)
+                    val den = (variance + 832f) * 9f
+                    // JS `int(x)` = `x >>> 0`. For negative x, Int32 truncation then
+                    // uint reinterpretation yields a huge value that always clamps
+                    // to 4 below. Replicate that behavior — the JS `< -1` clamp is
+                    // dead code and is intentionally omitted.
+                    val raw = (num / den).toInt()
+                    varAdj = when {
+                        raw < 0 -> 4
+                        raw > 4 -> 4
+                        else -> raw
                     }
                 }
-                val average = sum / 25.0
 
-                for (y in 0 until block) {
-                    val rowOffset = (yPos + y) * img.width + xPos
-                    for (x in 0 until block) {
-                        if (yPos + y < img.height && xPos + x < img.width) {
-                            // thresholdOffset: negative = more dark pixels, positive = more light pixels
-                            if (brightness[rowOffset + x] <= average + thresholdOffset) {
-                                matrix.set(xPos + x, yPos + y, true)
-                            }
-                        }
+                var cut = average + localAdj + chromaAdj + varAdj
+                // Small scene-level nudges: cheap, target whole-scene failure modes
+                // such as washed-out bright-spot images.
+                if (spreadMean > 10 && range >= 8 && range <= 96 &&
+                    average > minB + 8 && average < 192) cut++
+                if (veryLowFrac > 0.68 && veryLowFrac < 0.86 &&
+                    range >= 6 && range <= 20 && average < 196) cut++
+                cut += spotBias
+                if (cut < minB) cut = minB
+                if (cut > maxB) cut = maxB
+
+                // thresholdOffset is applied AFTER clamping so the retry mechanism
+                // can overshoot [min, max] as intended.
+                val threshold = cut + thresholdOffset
+                for (yy in 0 until block) {
+                    val rowOff = (yPos + yy) * width + xPos
+                    for (xx in 0 until block) {
+                        if (brightness[rowOff + xx] <= threshold)
+                            matrix.set(xPos + xx, yPos + yy, true)
                     }
                 }
             }
