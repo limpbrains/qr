@@ -46,7 +46,7 @@ dependencies {
 }
 ```
 
-Replace `TAG` with the latest release tag (e.g., `v0.0.2`).
+Replace `TAG` with the latest release tag (e.g., `v0.0.3`).
 
 ## Usage
 
