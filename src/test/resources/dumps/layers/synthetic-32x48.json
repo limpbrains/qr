@@ -1,0 +1,24 @@
+{
+ "image": "src/test/resources/dumps/synthetic-32x48.pgm",
+ "width": 32,
+ "height": 48,
+ "maxWidth": 32,
+ "maxHeight": 48,
+ "layers": [
+  {
+   "index": 0,
+   "width": 32,
+   "height": 48,
+   "words": 1,
+   "blockWidth": 4,
+   "blockHeight": 6,
+   "lumaCrc": 110341391,
+   "blocksCrc": 3211623394,
+   "cutsCrc": 1018512684,
+   "bitmapCrc": 4050566359,
+   "patternCount": 0,
+   "patterns": [],
+   "pick": {"ordinary":null,"inverted":null,"polarity":null,"triple":null,"pickSum":-1,"pickLo":0,"pickHi":0}
+  }
+ ]
+}

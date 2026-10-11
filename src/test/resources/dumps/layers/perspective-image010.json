@@ -1,0 +1,93 @@
+{
+ "image": "boofcv-v3/detection/perspective/image010.jpg",
+ "width": 1024,
+ "height": 768,
+ "maxWidth": 1024,
+ "maxHeight": 768,
+ "layers": [
+  {
+   "index": 0,
+   "width": 1024,
+   "height": 768,
+   "words": 32,
+   "blockWidth": 128,
+   "blockHeight": 96,
+   "lumaCrc": 475590477,
+   "blocksCrc": 1494846588,
+   "cutsCrc": 218127744,
+   "bitmapCrc": 3426015385,
+   "patternCount": 3,
+   "patterns": [
+    [478,329.5,2.857142857142857,8,0],
+    [483,427.5,2.7380952380952386,6,0],
+    [541.5,454.5,3.571428571428572,7,0]
+   ],
+   "pick": {
+    "ordinary": [0,1,2,0.5979473222347989],
+    "inverted": null,
+    "polarity": 0,
+    "triple": {"tl":[483,427.5,2.7380952380952386],"tr":[478,329.5,2.857142857142857],"bl":[541.5,454.5,3.571428571428572],"tlIndex":1,"trIndex":0,"blIndex":2,"inverted":false},
+    "pickSum": 3,
+    "pickLo": 0,
+    "pickHi": 2
+   }
+  },
+  {
+   "index": 1,
+   "width": 512,
+   "height": 384,
+   "words": 16,
+   "blockWidth": 64,
+   "blockHeight": 48,
+   "lumaCrc": 3290198125,
+   "blocksCrc": 109090675,
+   "cutsCrc": 499718946,
+   "bitmapCrc": 3257641465,
+   "patternCount": 3,
+   "patterns": [
+    [239,165,1.4285714285714286,4,0],
+    [241.5,213.875,1.392857142857143,4,0],
+    [270.5,227.5,1.857142857142857,3,0]
+   ],
+   "pick": {
+    "ordinary": [0,1,2,0.6029779524344187],
+    "inverted": null,
+    "polarity": 0,
+    "triple": {"tl":[241.5,213.875,1.392857142857143],"tr":[239,165,1.4285714285714286],"bl":[270.5,227.5,1.857142857142857],"tlIndex":1,"trIndex":0,"blIndex":2,"inverted":false},
+    "pickSum": 3,
+    "pickLo": 0,
+    "pickHi": 2
+   }
+  },
+  {
+   "index": 2,
+   "width": 256,
+   "height": 192,
+   "words": 8,
+   "blockWidth": 32,
+   "blockHeight": 24,
+   "lumaCrc": 3491227006,
+   "blocksCrc": 2339178783,
+   "cutsCrc": 2932018231,
+   "bitmapCrc": 1136175055,
+   "patternCount": 0,
+   "patterns": [],
+   "pick": {"ordinary":null,"inverted":null,"polarity":null,"triple":null,"pickSum":-1,"pickLo":0,"pickHi":0}
+  },
+  {
+   "index": 3,
+   "width": 128,
+   "height": 96,
+   "words": 4,
+   "blockWidth": 16,
+   "blockHeight": 12,
+   "lumaCrc": 1841997441,
+   "blocksCrc": 2036339603,
+   "cutsCrc": 1647171741,
+   "bitmapCrc": 3263211203,
+   "patternCount": 0,
+   "patterns": [],
+   "pick": {"ordinary":null,"inverted":null,"polarity":null,"triple":null,"pickSum":-1,"pickLo":0,"pickHi":0}
+  }
+ ]
+}

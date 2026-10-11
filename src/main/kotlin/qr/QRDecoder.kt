@@ -1,76 +1,57 @@
 package qr
 
 /**
- * QR Code decoder.
+ * One-shot QR decoding (qr v0.7.2 `decodeQR`, decode.ts L3135-3150) on a shared [QRScanner].
  *
  * Usage:
  * ```kotlin
- * // From Image object
- * val image = Image(width, height, rgbaByteArray)
- * val decoded = QRDecoder.decode(image)
- *
- * // From raw bytes
- * val decoded = QRDecoder.decode(width, height, rgbaByteArray)
+ * val decoded = QRDecoder.decode(Image(width, height, data)) // gray, RGB or RGBA
+ * val decoded = QRDecoder.decode(width, height, data)
  * ```
+ *
+ * The scanner (JS defaults: effort 1, timeLimit 1000/60 ms, nativeLimit Infinity) is created
+ * lazily. Thread-safe; the scanner is rebuilt when the frame size changes, so a constant camera
+ * stream allocates once. The arenas are wiped after every call as JS `decodeQR` does.
  */
 object QRDecoder {
-
-    // Threshold offsets to try when decoding fails
-    // Different JPEG decoders (jpeg-js vs ImageIO) produce slightly different pixel values
-    // Trying different thresholds helps compensate for this (+2 JPEG images: 95.76% vs 94.07%)
-    private val THRESHOLD_OFFSETS = listOf(0, -5, 5)
+    @Volatile
+    private var scanner: QRScanner? = null
 
     /**
-     * Decode a QR code from an Image.
+     * Decode the first QR code in [image].
      *
-     * @param image The image containing the QR code (RGB or RGBA format)
-     * @return The decoded string content
-     * @throws QRDecodingException if decoding fails
+     * @throws FinderNotFoundException when no finder triple was found
+     * @throws InvalidFormatException when no format word was readable
+     * @throws InvalidVersionException when the version words disagree with the sampled size
+     * @throws QRDecodingException for every other failure (message = JS error tag)
+     * @throws IllegalArgumentException for invalid image dimensions or data
      */
-    fun decode(image: Image): String {
-        // Validate input
-        require(image.width > 0) { "Invalid image width: ${image.width}" }
-        require(image.height > 0) { "Invalid image height: ${image.height}" }
-        require(image.data.isNotEmpty()) { "Image data is empty" }
-
-        var lastException: Exception? = null
-
-        // Try different threshold offsets to handle JPEG decoder differences
-        for (offset in THRESHOLD_OFFSETS) {
-            try {
-                return decodeWithOffset(image, offset)
-            } catch (e: Exception) {
-                lastException = e
-                // Continue to next offset
-            }
+    fun decode(image: Image): String = synchronized(this) {
+        var s = scanner
+        if (s == null || image.width != s.maxWidth || image.height != s.maxHeight) {
+            s = QRScanner(image.width, image.height)
+            scanner = s
         }
-
-        // All offsets failed, throw the last exception
-        throw lastException ?: QRDecodingException("Failed to decode QR code")
+        try {
+            s.addImage(image)
+            val result = s.decode()
+            if (result.isNotEmpty()) return result[0]
+            val fail = s.lastFailure ?: Fail.FINDER
+            throw when (fail) {
+                Fail.FINDER -> FinderNotFoundException(fail.tag)
+                Fail.FORMAT -> InvalidFormatException(fail.tag)
+                Fail.VERSION -> InvalidVersionException(fail.tag)
+                else -> QRDecodingException(fail.tag)
+            }
+        } finally {
+            // One-shot calls leave no source image data resident after return.
+            s.clean()
+        }
     }
 
     /**
-     * Internal decode method with a specific threshold offset.
-     */
-    private fun decodeWithOffset(image: Image, thresholdOffset: Int): String {
-        // Convert image to binary bitmap with threshold offset
-        val bitmap = PatternDetector.toBitmap(image, thresholdOffset)
-
-        // Detect QR code patterns and extract aligned bits
-        val (bits, _) = PatternDetector.detect(bitmap)
-
-        // Decode the extracted bits
-        return BitDecoder.decodeBitmap(bits)
-    }
-
-    /**
-     * Decode a QR code from raw image data.
-     *
-     * @param width Image width in pixels
-     * @param height Image height in pixels
-     * @param data Raw pixel data in RGB or RGBA format
-     * @return The decoded string content
-     * @throws QRDecodingException if decoding fails
+     * Decode the first QR code in raw pixel data. Format is inferred from `data.size` (see
+     * [Image.format]): exactly 3·px bytes ⇒ RGB, exactly 4·px ⇒ RGBA, otherwise ≥ px bytes ⇒ gray.
      */
     fun decode(width: Int, height: Int, data: ByteArray): String {
         return decode(Image(width, height, data))

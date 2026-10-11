@@ -1,0 +1,31 @@
+{
+ "image": "issues/invert.jpg",
+ "maxWidth": 430,
+ "maxHeight": 423,
+ "layers": [
+  {
+   "index": 0,
+   "setCount": 1,
+   "sets": [
+    [11.980392156862745,1,0,1,3]
+   ],
+   "pops": []
+  },
+  {
+   "index": 1,
+   "setCount": 1,
+   "sets": [
+    [11.333333333333334,1,0,1,2]
+   ],
+   "pops": []
+  },
+  {
+   "index": 2,
+   "setCount": 1,
+   "sets": [
+    [10.2,1,0,1,3]
+   ],
+   "pops": []
+  }
+ ]
+}

@@ -7,13 +7,13 @@ No external dependencies.
 ## Features
 
 - Decode QR codes from raw pixel data (Grayscale, RGB, or RGBA)
-- Optimized for camera frames - pass Y plane directly, skip color conversion
+- Optimized for camera frames - reusable `QRScanner`, pass the Y plane directly (with row stride)
 - Supports QR versions 1-40
 - All error correction levels (L, M, Q, H)
 - Numeric, Alphanumeric, and Byte encoding modes
 - ECI (Extended Channel Interpretation) - Supports 20+ character encodings (UTF-8, ISO-8859-*, Shift-JIS, Big5, GBK, etc.)
 - Inverted QR code detection - Automatically detects and decodes white-on-black QR codes
-- Automatic perspective correction
+- Perspective correction, mirrored codes, multiple QR codes per image
 - Reed-Solomon error correction
 
 ## Installation
@@ -46,106 +46,85 @@ dependencies {
 }
 ```
 
-Replace `TAG` with the latest release tag (e.g., `v0.0.3`).
+Replace `TAG` with the latest release tag (e.g., `v0.7.2`).
 
 ## Usage
 
-### Basic Usage
+### One-shot decode
 
 ```kotlin
 import qr.QRDecoder
-import qr.Image
 
-// From raw pixel data (auto-detects format based on size)
-val width = 640
-val height = 480
-
-// Grayscale (1 byte per pixel) - fastest, ideal for camera Y plane
-val grayscaleData: ByteArray = // ... width * height bytes
-val decoded = QRDecoder.decode(width, height, grayscaleData)
-
-// RGB (3 bytes per pixel)
-val rgbData: ByteArray = // ... width * height * 3 bytes
-val decoded2 = QRDecoder.decode(width, height, rgbData)
-
-// RGBA (4 bytes per pixel)
-val rgbaData: ByteArray = // ... width * height * 4 bytes
-val decoded3 = QRDecoder.decode(width, height, rgbaData)
+// Format is inferred from data.size: exactly 3 or 4 bytes/pixel -> RGB / RGBA, otherwise gray
+// (1 byte/pixel, e.g. a camera Y plane).
+val text: String = QRDecoder.decode(width, height, data)
 ```
 
-### Android CameraX Integration
+Inference only looks at the length, so a padded RGBA buffer (not exactly 4 bytes/pixel) is read as
+gray and a 3-plane YUV444 buffer as RGB rather than rejected; pass an explicit `PixelFormat` to
+`QRScanner.addImage` when the layout is ambiguous.
 
-For optimal performance with Android CameraX, extract the Y (luminance) plane directly. The Y plane is already grayscale - no color conversion needed:
+`QRDecoder` uses the JS defaults (effort 1, 1/60 s retry budget) and is thread-safe; calls are
+serialized on one cached scanner.
+
+### Camera frames: `QRScanner`
+
+For a stream of frames, construct a `QRScanner` once with the largest frame size and reuse it. It
+allocates all buffers up front and is not thread-safe (one scanner per analyzer thread).
 
 ```kotlin
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
-import qr.QRDecoder
-import qr.QRDecodingException
+import qr.PixelFormat
+import qr.QRScanner
 
-class QRCodeAnalyzer(
-    private val onQRCodeDetected: (String) -> Unit
-) : ImageAnalysis.Analyzer {
+val scanner = QRScanner(maxWidth = 1920, maxHeight = 1080) // effort = 1, timeLimitMs = 1000.0 / 60
 
-    override fun analyze(image: ImageProxy) {
-        try {
-            val grayscaleData = extractYPlane(image)
-            val decoded = QRDecoder.decode(image.width, image.height, grayscaleData)
-            onQRCodeDetected(decoded)
-        } catch (e: QRDecodingException) {
-            // No QR code found - expected for most frames
-        } finally {
-            image.close()
-        }
-    }
+private var bytes = ByteArray(0) // reused across frames
 
-    private fun extractYPlane(image: ImageProxy): ByteArray {
-        val yPlane = image.planes[0]
-        val yBuffer = yPlane.buffer
-        val rowStride = yPlane.rowStride
-        val width = image.width
-        val height = image.height
-        val yBytes = ByteArray(width * height)
-
-        if (rowStride == width) {
-            // Fast path: no padding
-            yBuffer.rewind()
-            yBuffer.get(yBytes, 0, width * height)
-        } else {
-            // Handle row stride padding
-            yBuffer.rewind()
-            for (row in 0 until height) {
-                yBuffer.position(row * rowStride)
-                yBuffer.get(yBytes, row * width, width)
-            }
-        }
-        return yBytes
+// Android CameraX ImageAnalysis.Analyzer
+override fun analyze(image: ImageProxy) {
+    try {
+        val y = image.planes[0]
+        val n = y.buffer.remaining()
+        if (bytes.size < n) bytes = ByteArray(n)
+        y.buffer.get(bytes, 0, n)
+        // The Y plane is already luma: pass it with its row stride, no color conversion.
+        scanner.addImage(image.width, image.height, bytes, PixelFormat.GRAY, offset = 0, stride = y.rowStride)
+        scanner.decode().firstOrNull()?.let(onQRCodeDetected) // empty list = nothing decoded
+    } finally {
+        image.close()
     }
 }
 ```
 
-This approach is **3-5x faster** than converting YUV to RGB first, as it skips:
-- U/V plane extraction
-- YUV to RGB color conversion (6 float multiplications per pixel)
-- RGB to grayscale conversion
+Alternatively write tight luma rows straight into `scanner.luma` and call
+`scanner.processLuma(width, height)` before `decode()` (zero copy).
 
-### Error Handling
+Options (constructor):
+
+- `effort` (default 1): retry budget; higher values try more finder triples per frame,
+  `Int.MAX_VALUE` = unlimited.
+- `timeLimitMs` (default `1000.0 / 60`): wall-time budget for retries, `Double.POSITIVE_INFINITY` = none.
+- `nativeLimit` (default `Int.MAX_VALUE`): native-resolution search gate, settable between frames.
+- `textDecoder`: custom `(bytes, eci) -> String` for byte segments.
+
+`decode(all = true)` returns every QR code in the frame. After a failed decode,
+`scanner.lastFailure` holds the reason (`Fail.FINDER`, `Fail.RS`, ...). `clean()` zeroes all buffers.
+
+### Error handling (`QRDecoder`)
 
 ```kotlin
-import qr.*
-
 try {
     val result = QRDecoder.decode(image)
-} catch (e: ImageTooSmallException) {
-    println("Image is too small for QR detection")
 } catch (e: FinderNotFoundException) {
-    println("No QR code finder patterns detected")
-} catch (e: InvalidFormatException) {
-    println("Invalid QR code format")
+    // no QR code found
 } catch (e: QRDecodingException) {
-    println("Failed to decode QR code: ${e.message}")
+    // found but not decodable; e.message is the JS failure tag (timing, version, rs, ...)
 }
 ```
+
+Besides `QRDecodingException`, `IllegalArgumentException` is thrown for invalid input (side > 4096,
+bad buffer size) and `IllegalStateException` in the (practically unreachable) finder-storage-exhaustion
+case, so callers such as camera analyzers should catch `Exception`.
 
 ## Requirements
 
@@ -166,58 +145,13 @@ git submodule update --init --recursive
 ./gradlew publishToMavenLocal
 ```
 
-## Project Structure
+## Compatibility with paulmillr/qr
 
-```
-src/main/kotlin/qr/
-├── QRDecoder.kt        # Main public API (entry point)
-├── Image.kt            # Image data class
-├── Types.kt            # Point, Pattern, enums, exceptions
-├── Bitmap.kt           # 2D bitmap class
-├── PatternDetector.kt  # Finder/alignment pattern detection
-├── Transform.kt        # Perspective transformation
-├── BitDecoder.kt       # Data extraction
-├── QRInfo.kt           # QR constants/tables
-├── GaloisField.kt      # GF(256) math
-├── ReedSolomon.kt      # Error correction
-└── Interleave.kt       # Block interleaving
-
-src/test/kotlin/qr/
-└── *.kt                # Unit and integration tests
-
-test/vectors/           # Test vectors (git submodule)
-```
-
-## Differences from JavaScript Implementation
-
-This Kotlin library is a port of the JavaScript [paulmillr/qr](https://github.com/paulmillr/qr) library with the following differences:
-
-### 1. Triangle Validation for Finder Patterns (Kotlin-only enhancement)
-
-Before stopping early during finder pattern detection, the Kotlin implementation validates that the 3 found patterns form a valid right isosceles triangle (ratio of two shorter sides > 0.8). This prevents false positives when QR data accidentally contains patterns matching the 1:1:3:1:1 finder ratio.
-
-**Impact:** +83 synthetic QR codes decoded correctly, -2 JPEG images.
-
-### 2. Threshold Retry for JPEG Decoder Differences
-
-JS (jpeg-js) and Kotlin (ImageIO) JPEG decoders produce slightly different pixel values (1-2 pixel brightness difference). To compensate, `QRDecoder` retries with threshold offsets `[0, -5, 5]`.
-
-To adjust, modify `THRESHOLD_OFFSETS` in `QRDecoder.kt`.
-
-### 3. No Kanji/ECI Encoding Support
-
-Same as the JS library - Kanji and ECI encoding modes are not supported.
-
-## Test Results
-
-Tested against [paulmillr/qr-code-vectors](https://github.com/paulmillr/qr-code-vectors):
-
-| Test Suite | Pass Rate | Notes |
-|------------|-----------|-------|
-| Small vectors (synthetic ASCII art QR) | 9134/9281 (98.42%) | ✓ Matches JavaScript decoder baseline |
-| JPEG images (boofcv-v3) | 113/118 (95.76%) | Real-world test images |
-
-**Note**: The 98.42% baseline has been validated against the JavaScript decoder. The 147 failing tests also fail in JavaScript with identical errors, confirming this is the correct baseline for both implementations.
+This is a port of the decoder from paulmillr/qr. Results are identical to the JS
+decoder on every test image (565/565 BoofCV/issue/misc images, default and all-results modes) and on
+all 9281 small vectors; see [CLAUDE.md](CLAUDE.md) for the parity tests and the few accepted
+deviations. Kotlin additions: gray (Y-plane) input with offset/stride and the synchronous `QRScanner`
+API. Kanji mode and the JS callbacks (`pointsOnDetect`, `imageOnResult`) are not supported.
 
 ## Acknowledgments
 

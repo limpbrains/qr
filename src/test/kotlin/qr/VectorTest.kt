@@ -1,5 +1,6 @@
 package qr
 
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.params.ParameterizedTest
@@ -125,7 +126,7 @@ class VectorTest {
         fun loadSmallVectorsStreaming(maxVectors: Int = 100): List<TestVector> {
             val vectorsPath = File("test/vectors/small-vectors.json.gz")
             if (!vectorsPath.exists()) {
-                return emptyList()
+                fail<Nothing>("test/vectors submodule missing: run git submodule update --init --recursive")
             }
 
             val vectors = mutableListOf<TestVector>()
@@ -263,6 +264,9 @@ class VectorTest {
             return result.toString()
         }
 
+        /** Pixels per module for the exhaustive small-vectors pass. */
+        private const val FULL_MODULE_PIXELS = 4
+
         // Cached vectors for parameterized tests
         // Limit to first 5 vectors which the decoder handles reliably
         private val cachedVectors: List<TestVector> by lazy {
@@ -363,8 +367,7 @@ class VectorTest {
         // Load more vectors to test streaming capability, even if some fail to decode
         val vectors = loadSmallVectorsStreaming(50)
         if (vectors.isEmpty()) {
-            println("Skipping: test vectors not available")
-            return
+            fail<Nothing>("test/vectors submodule missing: run git submodule update --init --recursive")
         }
 
         var successCount = 0
@@ -405,12 +408,12 @@ class VectorTest {
     }
 
     @Test
+    @Tag("exhaustive")
     fun `full vector test - all small vectors`() {
         // Load ALL vectors to match JS test coverage
         val vectors = loadSmallVectorsStreaming(Int.MAX_VALUE)
         if (vectors.isEmpty()) {
-            println("Skipping: test vectors not available")
-            return
+            fail<Nothing>("test/vectors submodule missing: run git submodule update --init --recursive")
         }
 
         var successCount = 0
@@ -420,7 +423,7 @@ class VectorTest {
         for ((idx, vector) in vectors.withIndex()) {
             try {
                 val bitmap = parseUnicodeQR(vector.out)
-                val image = bitmapToImage(bitmap, modulePixels = 10)
+                val image = bitmapToImage(bitmap, modulePixels = FULL_MODULE_PIXELS)
                 val decoded = QRDecoder.decode(image)
 
                 if (decoded == vector.text) {
@@ -449,8 +452,9 @@ class VectorTest {
             }
         }
 
-        // This test is informational - we want to see coverage
         assertTrue(vectors.size > 1000, "Expected to load many vectors, got ${vectors.size}")
+        // Every small vector decodes (JS decodeQR parity at v0.7.2).
+        assertEquals(vectors.size, successCount, "small-vectors decode failures")
     }
 
 }

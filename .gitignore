@@ -23,7 +23,7 @@ bin/
 *.log
 
 # original lib
-qr/
+/qr/
 
 # claude
 .claude/

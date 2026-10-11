@@ -1,0 +1,90 @@
+{
+ "image": "boofcv-v3/detection/pathological/image005.png",
+ "width": 296,
+ "height": 296,
+ "maxWidth": 296,
+ "maxHeight": 296,
+ "layers": [
+  {
+   "index": 0,
+   "width": 296,
+   "height": 296,
+   "words": 10,
+   "blockWidth": 37,
+   "blockHeight": 37,
+   "lumaCrc": 1264466137,
+   "blocksCrc": 2481442899,
+   "cutsCrc": 3350006835,
+   "bitmapCrc": 4277025035,
+   "patternCount": 3,
+   "patterns": [
+    [60,60,8,12,0],
+    [236,60,8,12,0],
+    [60,236,8,12,0]
+   ],
+   "pick": {
+    "ordinary": [0,1,2,0],
+    "inverted": null,
+    "polarity": 0,
+    "triple": {"tl":[60,60,8],"tr":[236,60,8],"bl":[60,236,8],"tlIndex":0,"trIndex":1,"blIndex":2,"inverted":false},
+    "pickSum": 3,
+    "pickLo": 0,
+    "pickHi": 2
+   }
+  },
+  {
+   "index": 1,
+   "width": 148,
+   "height": 148,
+   "words": 5,
+   "blockWidth": 19,
+   "blockHeight": 19,
+   "lumaCrc": 1723078981,
+   "blocksCrc": 620331314,
+   "cutsCrc": 1240985081,
+   "bitmapCrc": 3060959030,
+   "patternCount": 3,
+   "patterns": [
+    [30,30,4,6,0],
+    [118,30,4,6,0],
+    [30,118,4,6,0]
+   ],
+   "pick": {
+    "ordinary": [0,1,2,0],
+    "inverted": null,
+    "polarity": 0,
+    "triple": {"tl":[30,30,4],"tr":[118,30,4],"bl":[30,118,4],"tlIndex":0,"trIndex":1,"blIndex":2,"inverted":false},
+    "pickSum": 3,
+    "pickLo": 0,
+    "pickHi": 2
+   }
+  },
+  {
+   "index": 2,
+   "width": 74,
+   "height": 74,
+   "words": 3,
+   "blockWidth": 10,
+   "blockHeight": 10,
+   "lumaCrc": 938424669,
+   "blocksCrc": 1215666912,
+   "cutsCrc": 3397221523,
+   "bitmapCrc": 1512753899,
+   "patternCount": 3,
+   "patterns": [
+    [15,15,2,3,0],
+    [59,15,2,3,0],
+    [15,59,2,3,0]
+   ],
+   "pick": {
+    "ordinary": [0,1,2,0],
+    "inverted": null,
+    "polarity": 0,
+    "triple": {"tl":[15,15,2],"tr":[59,15,2],"bl":[15,59,2],"tlIndex":0,"trIndex":1,"blIndex":2,"inverted":false},
+    "pickSum": 3,
+    "pickLo": 0,
+    "pickHi": 2
+   }
+  }
+ ]
+}

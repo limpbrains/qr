@@ -1,0 +1,25 @@
+{
+ "image": "boofcv-v3/detection/perspective/image010.jpg",
+ "maxWidth": 1024,
+ "maxHeight": 768,
+ "layers": [
+  {
+   "index": 0,
+   "setCount": 1,
+   "sets": [
+    [9.34547315445963,0,0,1,2]
+   ],
+   "pops": []
+  },
+  {
+   "index": 1,
+   "setCount": 1,
+   "sets": [
+    [8.897981245649705,0,0,1,2]
+   ],
+   "pops": []
+  },
+  {"index":2,"setCount":0,"sets":[],"pops":[]},
+  {"index":3,"setCount":0,"sets":[],"pops":[]}
+ ]
+}

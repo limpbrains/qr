@@ -14,13 +14,13 @@ class QRDecoderTest {
     }
 
     @Test
-    fun `decode should throw for too small image`() {
-        // Create a very small image (below minimum QR code size)
+    fun `decode should throw FinderNotFoundException for too small image`() {
+        // A frame below the smallest symbol size has no finder triple (JS fails with `finder`).
         val width = 10
         val height = 10
         val data = ByteArray(width * height * 4) { 255.toByte() }
 
-        assertThrows<ImageTooSmallException> {
+        assertThrows<FinderNotFoundException> {
             QRDecoder.decode(width, height, data)
         }
     }
@@ -49,10 +49,12 @@ class QRDecoderTest {
 
     @Test
     fun `Image bytesPerPixel should throw for invalid format`() {
-        val invalidImage = Image(10, 10, ByteArray(10 * 10 * 2))
+        // Shorter than one byte per pixel is invalid; oversize non-3/4 bpp buffers are planar gray (JS L589-596).
+        val invalidImage = Image(10, 10, ByteArray(10 * 10 - 1))
         assertThrows<IllegalArgumentException> {
             invalidImage.bytesPerPixel
         }
+        assertEquals(1, Image(10, 10, ByteArray(10 * 10 * 2)).bytesPerPixel)
     }
 
     // Helper to create a simple test QR code bitmap as an Image
@@ -73,36 +75,102 @@ class QRDecoderTest {
         }
     }
 
-    @Test
-    fun `Point operations should work correctly`() {
-        val p1 = Point(3.0, 4.0)
-        val p2 = Point(1.0, 2.0)
+    private fun symbol(text: String, version: Int? = null) =
+        TestEncoder.encodeRaw(text, version = version, ecc = ErrorCorrection.LOW, mask = 0, border = 4)
 
-        assertEquals(Point(4.0, 6.0), p1 + p2)
-        assertEquals(Point(2.0, 2.0), p1 - p2)
-        assertEquals(Point(-3.0, -4.0), -p1)
-        assertEquals(Point(4.0, 3.0), p1.mirror())
+    @Test
+    fun `facade decodes gray, RGB and RGBA rasters`() {
+        val raw = symbol("FACADE FORMATS")
+        assertEquals("FACADE FORMATS", QRDecoder.decode(TestImages.matrixToImage(raw, 4)))
+        assertEquals("FACADE FORMATS", QRDecoder.decode(TestImages.matrixToImage(raw, 4, rgb = true)))
+        val gray = TestImages.matrixToGrayImage(raw, 4)
+        assertEquals(PixelFormat.GRAY, gray.format)
+        assertEquals("FACADE FORMATS", QRDecoder.decode(gray))
+        assertEquals("FACADE FORMATS", QRDecoder.decode(gray.width, gray.height, gray.data))
+    }
+
+    // Version words of another version, or beyond BCH radius 3 in both copies: JS fails with `version`.
+    @Test
+    fun `version 7 with destroyed version info throws InvalidVersionException`() {
+        val version = 7
+        val size = 17 + 4 * version
+        for (word in listOf(0, QRInfo.versionBits(version + 1))) {
+            val raw = symbol("VERSION INFO GONE", version)
+            for (copy in 0..1)
+                for (i in 0 until 18) {
+                    val x = size - 11 + (i % 3)
+                    val y = i / 3
+                    raw[4 + if (copy != 0) x else y][4 + if (copy != 0) y else x] = ((word shr i) and 1) != 0
+                }
+            val e = assertThrows<InvalidVersionException> { QRDecoder.decode(TestImages.matrixToImage(raw, 4)) }
+            assertEquals("version", e.message)
+        }
+    }
+
+    // Both format copies beyond BCH radius 3: the format miss is followed by the inverted-projection
+    // retry, whose timing check ends the scan, so JS reports `timing` (verified against qr v0.7.2;
+    // no test image ends on `format` either). The facade keeps the JS tag as a plain QRDecodingException.
+    @Test
+    fun `destroyed format info reports the JS terminal tag`() {
+        val raw = symbol("FORMAT GONE", 1)
+        val size = raw.size - 8
+        for (copy in 0..1)
+            for (i in 0 until 15) {
+                val x = if (copy == 0) (if (i < 9) (if (i == 8) 7 else 8) else 14 - i) else (if (i < 8) size - 1 - i else 8)
+                val y = if (copy == 0) (if (i < 6) i else if (i < 8) i + 1 else 8) else (if (i < 8) 8 else size - 15 + i)
+                raw[4 + y][4 + x] = false
+            }
+        val e = assertThrows<QRDecodingException> { QRDecoder.decode(TestImages.matrixToImage(raw, 4)) }
+        assertEquals(QRDecodingException::class, e::class)
+        assertEquals("timing", e.message)
+    }
+
+    // decode-batch.test.ts L48-83: the damaged 'A' symbol fails with `timing`.
+    @Test
+    fun `other failure tags throw QRDecodingException with the tag as message`() {
+        val raw = symbol("A", 1)
+        for (y in 12 until 16) for (x in 12 until 16) raw[y][x] = !raw[y][x]
+        val e = assertThrows<QRDecodingException> { QRDecoder.decode(TestImages.matrixToImage(raw, 4)) }
+        assertEquals(QRDecodingException::class, e::class)
+        assertEquals("timing", e.message)
+        val finder = assertThrows<FinderNotFoundException> { QRDecoder.decode(createTestQRImage()) }
+        assertEquals("finder", finder.message)
     }
 
     @Test
-    fun `Point distance should calculate correctly`() {
-        val p1 = Point(0.0, 0.0)
-        val p2 = Point(3.0, 4.0)
-
-        assertEquals(5.0, Point.distance(p1, p2), 0.0001)
-        assertEquals(25.0, Point.distance2(p1, p2), 0.0001)
+    fun `cached scanner is rebuilt when the frame size changes`() {
+        // Hold the facade lock (reentrant) so concurrently running test classes cannot swap the scanner.
+        synchronized(QRDecoder) {
+            val raw = symbol("GROW THE SCANNER")
+            val field = QRDecoder::class.java.getDeclaredField("scanner").apply { isAccessible = true }
+            assertEquals("GROW THE SCANNER", QRDecoder.decode(TestImages.matrixToImage(raw, 2)))
+            val small = field.get(QRDecoder) as QRScanner
+            assertEquals("GROW THE SCANNER", QRDecoder.decode(TestImages.matrixToImage(raw, 2)))
+            assertSame(small, field.get(QRDecoder), "same size reuses the scanner")
+            val big = TestImages.matrixToImage(raw, 41) // v1: 29 modules x 41 px = 1189 px per side
+            assertEquals("GROW THE SCANNER", QRDecoder.decode(big))
+            val scanner = field.get(QRDecoder) as QRScanner
+            assertNotSame(small, scanner)
+            assertEquals(big.width, scanner.maxWidth)
+            assertEquals(big.height, scanner.maxHeight)
+            assertEquals("GROW THE SCANNER", QRDecoder.decode(TestImages.matrixToImage(raw, 2)))
+            assertNotSame(scanner, field.get(QRDecoder), "a smaller size rebuilds too")
+        }
     }
 
     @Test
-    fun `Pattern merge should calculate weighted average`() {
-        val p1 = Pattern(0.0, 0.0, 2.0, 1)
-        val p2 = Pattern(4.0, 4.0, 2.0, 1)
-
-        val merged = p1.merge(p2)
-        assertEquals(2.0, merged.x, 0.0001)
-        assertEquals(2.0, merged.y, 0.0001)
-        assertEquals(2.0, merged.moduleSize, 0.0001)
-        assertEquals(2, merged.count)
+    fun `concurrent facade calls do not corrupt results`() {
+        val texts = listOf("THREAD ONE", "THREAD TWO PAYLOAD", "THREAD THREE 3333")
+        val images = texts.mapIndexed { i, t -> TestImages.matrixToImage(symbol(t), 3 + i) }
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(texts.size)
+        try {
+            val futures = images.mapIndexed { i, img ->
+                pool.submit<List<String>> { List(20) { QRDecoder.decode(img) }.filter { it != texts[i] } }
+            }
+            for (f in futures) assertEquals(emptyList<String>(), f.get())
+        } finally {
+            pool.shutdown()
+        }
     }
 
     @Test
@@ -119,20 +187,5 @@ class QRDecoderTest {
         assertEquals(ErrorCorrection.MEDIUM, ErrorCorrection.fromCode(0b00))
         assertEquals(ErrorCorrection.QUARTILE, ErrorCorrection.fromCode(0b11))
         assertEquals(ErrorCorrection.HIGH, ErrorCorrection.fromCode(0b10))
-    }
-
-    @Test
-    fun `EncodingType should have correct mode bits`() {
-        assertEquals("0001", EncodingType.NUMERIC.modeBits)
-        assertEquals("0010", EncodingType.ALPHANUMERIC.modeBits)
-        assertEquals("0100", EncodingType.BYTE.modeBits)
-    }
-
-    @Test
-    fun `EncodingType fromModeBits should return correct enum`() {
-        assertEquals(EncodingType.NUMERIC, EncodingType.fromModeBits("0001"))
-        assertEquals(EncodingType.ALPHANUMERIC, EncodingType.fromModeBits("0010"))
-        assertEquals(EncodingType.BYTE, EncodingType.fromModeBits("0100"))
-        assertNull(EncodingType.fromModeBits("1111"))
     }
 }

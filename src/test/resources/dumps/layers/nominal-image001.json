@@ -1,0 +1,57 @@
+{
+ "image": "boofcv-v3/detection/nominal/image001.jpg",
+ "width": 550,
+ "height": 308,
+ "maxWidth": 550,
+ "maxHeight": 308,
+ "layers": [
+  {
+   "index": 0,
+   "width": 550,
+   "height": 308,
+   "words": 18,
+   "blockWidth": 69,
+   "blockHeight": 39,
+   "lumaCrc": 1975122328,
+   "blocksCrc": 636947180,
+   "cutsCrc": 2062565364,
+   "bitmapCrc": 2426504795,
+   "patternCount": 2,
+   "patterns": [
+    [218.5,95.5,2.142857142857143,2,0],
+    [229.5,109,3.2857142857142856,1,1]
+   ],
+   "pick": {"ordinary":null,"inverted":null,"polarity":null,"triple":null,"pickSum":-1,"pickLo":0,"pickHi":0}
+  },
+  {
+   "index": 1,
+   "width": 275,
+   "height": 154,
+   "words": 9,
+   "blockWidth": 35,
+   "blockHeight": 20,
+   "lumaCrc": 1792880295,
+   "blocksCrc": 237619829,
+   "cutsCrc": 1549977787,
+   "bitmapCrc": 1416700263,
+   "patternCount": 0,
+   "patterns": [],
+   "pick": {"ordinary":null,"inverted":null,"polarity":null,"triple":null,"pickSum":-1,"pickLo":0,"pickHi":0}
+  },
+  {
+   "index": 2,
+   "width": 137,
+   "height": 77,
+   "words": 5,
+   "blockWidth": 18,
+   "blockHeight": 10,
+   "lumaCrc": 4241218911,
+   "blocksCrc": 2637066716,
+   "cutsCrc": 572886522,
+   "bitmapCrc": 492870083,
+   "patternCount": 0,
+   "patterns": [],
+   "pick": {"ordinary":null,"inverted":null,"polarity":null,"triple":null,"pickSum":-1,"pickLo":0,"pickHi":0}
+  }
+ ]
+}

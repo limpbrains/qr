@@ -1,0 +1,8 @@
+{
+ "image": "src/test/resources/dumps/synthetic-6x5.pgm",
+ "maxWidth": 6,
+ "maxHeight": 5,
+ "layers": [
+  {"index":0,"setCount":0,"sets":[],"pops":[]}
+ ]
+}
