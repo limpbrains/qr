@@ -16,7 +16,8 @@ the `.ts` sources directly. Commands below run from the `qr/` directory.
 | `js-dump/dump-layers.mjs` | `--synthetic <W> <H> <out.pgm>` | deterministic gray PGM | `dumps/synthetic-*.pgm` |
 | `js-dump/luma-crc.mjs` | `<qr-paulmillr-dir> <out.json>` (or `--raw <image> <out.gray>` to dump one luma plane) | JSON | `boofcv-luma-crc32.json` (LumaParityTest) |
 | `js-dump/math-fixtures.mjs` | `<out-dir>` | `hypot-fixture.txt`, `cbrt-fixture.txt` (V8 `Math.hypot`/`Math.cbrt`) | HomographyTest |
-| `js-dump/encoder-fixtures.mjs` | `<qr-paulmillr-dir>` | text (stdout): `encodeQR(..., 'raw')` grids | `encoder-fixtures.txt` (TestEncoderTest) |
+| `js-dump/encoder-fixtures.mjs` | `<qr-paulmillr-dir>` | text (stdout): `encodeQR(..., 'raw')` grids | `encoder-fixtures.txt` (EncoderTest) |
+| `js-dump/encoder-renders.mjs` | `<qr-paulmillr-dir>` | JSON lines (stdout): `encodeQR` svg/term/ascii/data-url/raw outputs | `encoder-renders.txt` (RendererTest; raw case also EncodeOptionsTest) |
 
 `<image>` paths are relative to `test/vectors` (`.jpg`/`.png`, luma via the JS test readers
 `test/misc/jpg.ts` / `png.ts`) or a `.pgm` path relative to the current directory.
@@ -69,6 +70,7 @@ dump synthetic-48x24        $R/dumps/synthetic-48x24.pgm
 # V8 math references and encoder grids
 node tools/js-dump/math-fixtures.mjs $R
 n tools/js-dump/encoder-fixtures.mjs $JS > $R/encoder-fixtures.txt
+n tools/js-dump/encoder-renders.mjs $JS > $R/encoder-renders.txt
 ```
 
 After regenerating, run `./gradlew test`; a changed fixture means upstream behaviour changed and the

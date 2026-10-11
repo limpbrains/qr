@@ -21,7 +21,7 @@ class CallbacksTest {
     // decode.test.ts L400-414
     @Test
     fun `imageOnResult fires a 1px-per-module RGBA image on success`() {
-        val raw = TestEncoder.encodeRaw("result image", version = 3, border = 4)
+        val raw = QREncoder.encodeRaw("result image", EncodeOptions(version = 3, border = 4))
         val img = TestImages.matrixToImage(raw, 4)
         val results = ArrayList<Image>()
         val text = QRDecoder.decode(img, DecodeOptions(imageOnResult = { results.add(it) }))
@@ -51,7 +51,7 @@ class CallbacksTest {
 
     @Test
     fun `imageOnBitmap fires once per prepared layer with its binarized plane`() {
-        val raw = TestEncoder.encodeRaw("BITMAP", version = 2, border = 4)
+        val raw = QREncoder.encodeRaw("BITMAP", EncodeOptions(version = 2, border = 4))
         val img = TestImages.matrixToImage(raw, 4)
         assertEquals(132, img.width)
         val images = ArrayList<Image>()
@@ -91,7 +91,7 @@ class CallbacksTest {
 
     @Test
     fun `a throwing callback propagates and leaves the scanner usable`() {
-        val img = TestImages.matrixToImage(TestEncoder.encodeRaw("THROW", version = 2, border = 4), 4)
+        val img = TestImages.matrixToImage(QREncoder.encodeRaw("THROW", EncodeOptions(version = 2, border = 4)), 4)
         var fail = true
         val s = QRScanner(img.width, img.height, DecodeOptions(imageOnResult = { if (fail) throw RuntimeException("boom") }))
         s.addImage(img)
@@ -100,7 +100,7 @@ class CallbacksTest {
         s.addImage(img)
         assertEquals(listOf("THROW"), s.decode())
 
-        val second = TestImages.matrixToImage(TestEncoder.encodeRaw("NEXT", version = 2, border = 4), 4)
+        val second = TestImages.matrixToImage(QREncoder.encodeRaw("NEXT", EncodeOptions(version = 2, border = 4)), 4)
         var calls = 0
         val batch = QRDecoder.decodeBatch(
             listOf(img, second),

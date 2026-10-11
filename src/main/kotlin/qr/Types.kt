@@ -96,3 +96,29 @@ data class DecodeOptions(
 
 /** Result of a batch decode: every decoded text plus the terminal failure or error, if any. */
 data class BatchResult(val texts: List<String>, val failure: Fail?, val error: Exception? = null)
+
+/** QR payload segment mode (JS `EncodingType`, index.ts L22). Kanji is not supported, as in JS. */
+enum class Encoding { NUMERIC, ALPHANUMERIC, BYTE }
+
+/**
+ * Encoder options (JS `QrOpts`, index.ts L147-156; validated in `encodeQR` L1175-1258).
+ *
+ * @param ecc error correction level
+ * @param encoding segment mode; null detects the smallest of numeric/alphanumeric/byte
+ * @param textEncoder byte-mode text encoder; null = WHATWG UTF-8 (`TextEncoder`)
+ * @param version 1..40; null picks the smallest version that fits
+ * @param mask 0..7; null scores all eight masks and keeps the first lowest penalty
+ * @param border quiet zone in modules, > 0
+ * @param scale pixels per module, 1..1024
+ * @param optimize SVG path optimization (used by the SVG output)
+ */
+data class EncodeOptions(
+    val ecc: ErrorCorrection = ErrorCorrection.MEDIUM,
+    val encoding: Encoding? = null,
+    val textEncoder: ((String) -> ByteArray)? = null,
+    val version: Int? = null,
+    val mask: Int? = null,
+    val border: Int = 2,
+    val scale: Int = 1,
+    val optimize: Boolean = true,
+)

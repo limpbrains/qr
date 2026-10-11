@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import qr.TestEncoder.Encoding
 
 /** Synthetic decoder tests ported from qr-paulmillr test/decode.test.ts (line numbers cited). */
 class SyntheticTest {
@@ -43,14 +42,14 @@ class SyntheticTest {
         val shapes = listOf(2 to L, 3 to M, 5 to Q, 7 to H, 10 to M)
         for ((enc, text) in payloads)
             for ((version, ecc) in shapes) {
-                val raw = TestEncoder.encodeRaw(text, version = version, ecc = ecc, border = 4, encoding = enc)
+                val raw = QREncoder.encodeRaw(text, EncodeOptions(version = version, ecc = ecc, border = 4, encoding = enc))
                 assertEquals(text, read(TestImages.matrixToImage(raw, 4)), "$enc v$version $ecc")
                 assertEquals(text, read(TestImages.matrixToImage(raw, 4, rgb = true)), "rgb $enc v$version $ecc")
                 assertEquals(text, read(TestImages.matrixToGrayImage(raw, 4)), "gray $enc v$version $ecc")
             }
         for (mask in listOf(0, 3, 7)) {
             val text = payloads.getValue(Encoding.ALPHANUMERIC)
-            val raw = TestEncoder.encodeRaw(text, ecc = M, mask = mask, border = 4)
+            val raw = QREncoder.encodeRaw(text, EncodeOptions(ecc = M, mask = mask, border = 4))
             assertEquals(text, read(TestImages.matrixToImage(raw, 4)), "mask $mask")
             assertEquals(text, read(TestImages.matrixToImage(raw, 4, rgb = true)), "rgb mask $mask")
         }
@@ -63,7 +62,7 @@ class SyntheticTest {
             for (ecc in ErrorCorrection.entries) {
                 val text = "A".repeat(minOf(10 + version, 60))
                 val raw = try {
-                    TestEncoder.encodeRaw(text, version = version, ecc = ecc, border = 4)
+                    QREncoder.encodeRaw(text, EncodeOptions(version = version, ecc = ecc, border = 4))
                 } catch (e: IllegalArgumentException) {
                     continue // capacity too small for this text/version/ecc combo
                 }
@@ -75,7 +74,7 @@ class SyntheticTest {
     @Test
     fun `Reed-Solomon corrects damaged data modules`() {
         val text = "DAMAGE TEST 123"
-        val raw = TestEncoder.encodeRaw(text, version = 2, ecc = H, border = 4)
+        val raw = QREncoder.encodeRaw(text, EncodeOptions(version = 2, ecc = H, border = 4))
         for (y in 26 until 28) for (x in 22 until 27) raw[y][x] = !raw[y][x]
         assertEquals(text, read(TestImages.matrixToImage(raw, 4)))
     }
@@ -83,21 +82,21 @@ class SyntheticTest {
     // L445-457 (JS passes effort Infinity; the mandatory pass already decodes it)
     @Test
     fun `clean one-pixel-per-module symbol`() {
-        val raw = TestEncoder.encodeRaw("ONE PIXEL", version = 4, ecc = L, mask = 0, border = 4)
+        val raw = QREncoder.encodeRaw("ONE PIXEL", EncodeOptions(version = 4, ecc = L, mask = 0, border = 4))
         assertEquals("ONE PIXEL", read(TestImages.matrixToImage(raw, 1)))
     }
 
     // L445-457 with the JS options: effort Infinity, timeLimit Infinity.
     @Test
     fun `clean one-pixel-per-module symbol at max effort`() {
-        val raw = TestEncoder.encodeRaw("ONE PIXEL", version = 4, ecc = L, mask = 0, border = 4)
+        val raw = QREncoder.encodeRaw("ONE PIXEL", EncodeOptions(version = 4, ecc = L, mask = 0, border = 4))
         assertEquals(listOf("ONE PIXEL"), maxEffort().also { it.addImage(TestImages.matrixToImage(raw, 1)) }.decode())
     }
 
     // L416-443: a sharp 2 px/module symbol in a 3000x3000 canvas exists only at native resolution.
     @Test
     fun `max effort escalates to native resolution`() {
-        val raw = TestEncoder.encodeRaw("NATIVE ONLY", version = 2, border = 4)
+        val raw = QREncoder.encodeRaw("NATIVE ONLY", EncodeOptions(version = 2, border = 4))
         val qr = TestImages.matrixToImage(raw, 2)
         val w = 3000
         val h = 3000
@@ -121,7 +120,7 @@ class SyntheticTest {
     // decode-batch.test.ts L203-211 (synthetic half): timeLimit 0 still runs the mandatory round.
     @Test
     fun `effort infinity with timeLimit 0 still decodes the mandatory pick`() {
-        val img = TestImages.matrixToImage(TestEncoder.encodeRaw("EFFORT MANDATORY", border = 4), 4)
+        val img = TestImages.matrixToImage(QREncoder.encodeRaw("EFFORT MANDATORY", EncodeOptions(border = 4)), 4)
         val scanner = QRScanner(img.width, img.height, effort = Int.MAX_VALUE, timeLimitMs = 0.0)
         scanner.addImage(img)
         assertEquals(listOf("EFFORT MANDATORY"), scanner.decode())
@@ -131,7 +130,7 @@ class SyntheticTest {
     @Test
     fun `decodes every QR once without rediscovering it across pyramid layers`() {
         val texts = listOf("MULTI ONE", "MULTI TWO", "MULTI ONE")
-        val symbols = texts.map { TestImages.matrixToImage(TestEncoder.encodeRaw(it, border = 4), 4) }
+        val symbols = texts.map { TestImages.matrixToImage(QREncoder.encodeRaw(it, EncodeOptions(border = 4)), 4) }
         val gap = 32
         val width = symbols.sumOf { it.width } + gap * (symbols.size - 1)
         val height = symbols[0].height
@@ -169,7 +168,7 @@ class SyntheticTest {
     // L459-483 (JS passes effort Infinity; the mandatory pass already decodes it)
     @Test
     fun `nearest-neighbour resize to non-integer module widths`() {
-        val raw = TestEncoder.encodeRaw("A", version = 1, ecc = L, mask = 0, border = 4)
+        val raw = QREncoder.encodeRaw("A", EncodeOptions(version = 1, ecc = L, mask = 0, border = 4))
         val side = 67
         val img = rgba(side, side) { x, y -> raw[(y * raw.size) / side][(x * raw.size) / side] }
         assertEquals("A", read(img))
@@ -178,7 +177,7 @@ class SyntheticTest {
     // L485-506
     @Test
     fun `horizontally stretched symbol`() {
-        val raw = TestEncoder.encodeRaw("ANISO", version = 1, ecc = L, mask = 0, border = 4)
+        val raw = QREncoder.encodeRaw("ANISO", EncodeOptions(version = 1, ecc = L, mask = 0, border = 4))
         val scaleX = 12
         val scaleY = 8
         val img = rgba(raw[0].size * scaleX, raw.size * scaleY) { x, y -> raw[y / scaleY][x / scaleX] }
@@ -189,7 +188,7 @@ class SyntheticTest {
     @Test
     fun `limited timing-pattern damage`() {
         val border = 4
-        val raw = TestEncoder.encodeRaw("A", version = 1, ecc = L, mask = 0, border = border)
+        val raw = QREncoder.encodeRaw("A", EncodeOptions(version = 1, ecc = L, mask = 0, border = border))
         for (x in 8..10) raw[border + 6][border + x] = !raw[border + 6][border + x]
         assertEquals("A", read(TestImages.matrixToImage(raw, 4)))
     }
@@ -201,7 +200,7 @@ class SyntheticTest {
         val version = 7
         val border = 4
         val scale = 8
-        val raw = TestEncoder.encodeRaw(payload, version = version, border = border, ecc = L, mask = 0)
+        val raw = QREncoder.encodeRaw(payload, EncodeOptions(version = version, border = border, ecc = L, mask = 0))
         val modules = 17 + 4 * version
         val width = raw[0].size * scale
         val height = raw.size * scale
@@ -223,7 +222,7 @@ class SyntheticTest {
     @Test
     fun `falls back from a damaged alignment pattern`() {
         val border = 4
-        val raw = TestEncoder.encodeRaw("A", version = 2, ecc = H, mask = 0, border = border)
+        val raw = QREncoder.encodeRaw("A", EncodeOptions(version = 2, ecc = H, mask = 0, border = border))
         raw[border + 18][border + 18] = !raw[border + 18][border + 18]
         assertEquals("A", read(TestImages.matrixToImage(raw, 4)))
     }
@@ -232,7 +231,7 @@ class SyntheticTest {
     @Test
     fun `resists one inflated finder-size estimate`() {
         val border = 4
-        val raw = TestEncoder.encodeRaw("A", version = 24, ecc = H, mask = 0, border = border)
+        val raw = QREncoder.encodeRaw("A", EncodeOptions(version = 24, ecc = H, mask = 0, border = border))
         raw[border + 2][border + 5] = !raw[border + 2][border + 5]
         assertEquals("A", read(TestImages.matrixToImage(raw, 4)))
     }
@@ -245,7 +244,7 @@ class SyntheticTest {
         val correct = QRInfo.formatBits(Q, 7)
         val wrong = QRInfo.formatBits(L, 0)
         fun conflict(wrongCopy: Int, damagedCorrect: Int = correct): Image {
-            val raw = TestEncoder.encodeRaw(payload, version = 1, ecc = Q, mask = 7, border = border)
+            val raw = QREncoder.encodeRaw(payload, EncodeOptions(version = 1, ecc = Q, mask = 7, border = border))
             val size = raw.size - 2 * border
             fun write(copy: Int, bits: Int) {
                 for (i in 0 until 15) {
@@ -288,7 +287,7 @@ class SyntheticTest {
         val words = intArrayOf(
             79, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 229, 147, 129, 112, 149, 181,
         )
-        assertThrows<QRDecodingException> { read(TestImages.matrixToImage(TestEncoder.symbolMatrix(1, L, words), 4)) }
+        assertThrows<QRDecodingException> { read(TestImages.matrixToImage(TestSymbols.symbolMatrix(1, L, words), 4)) }
     }
 
     // L826-870
@@ -317,7 +316,7 @@ class SyntheticTest {
             ),
         )
         for ((mode, words) in streams) {
-            val img = TestImages.matrixToImage(TestEncoder.symbolMatrix(1, L, words), 4)
+            val img = TestImages.matrixToImage(TestSymbols.symbolMatrix(1, L, words), 4)
             assertThrows<QRDecodingException>(mode) { read(img) }
         }
     }
@@ -330,7 +329,7 @@ class SyntheticTest {
         val size = 17 + 4 * version
         val payload = "VERSION INFO MUST BE CHECKED"
         val wrong = QRInfo.versionBits(version + 1)
-        fun make() = TestEncoder.encodeRaw(payload, version = version, border = border, mask = 0, ecc = L)
+        fun make() = QREncoder.encodeRaw(payload, EncodeOptions(version = version, border = border, mask = 0, ecc = L))
         fun write(raw: Array<BooleanArray>, copy: Int, i: Int, value: Boolean? = null) {
             val x = size - 11 + (i % 3)
             val y = i / 3
@@ -358,7 +357,7 @@ class SyntheticTest {
     // L71-80
     @Test
     fun `grayscale raster decodes like its RGBA rendering`() {
-        val raw = TestEncoder.encodeRaw("HELLO WORLD", version = 1, border = 2)
+        val raw = QREncoder.encodeRaw("HELLO WORLD", EncodeOptions(version = 1, border = 2))
         val img = TestImages.matrixToImage(raw, 4)
         assertEquals("HELLO WORLD", read(img))
         assertEquals("HELLO WORLD", read(gray(img)))
@@ -367,7 +366,7 @@ class SyntheticTest {
     @Test
     fun `inverted raster decodes`() {
         val text = "INVERTED RASTER"
-        val img = TestImages.matrixToImage(TestEncoder.encodeRaw(text, border = 4), 4)
+        val img = TestImages.matrixToImage(QREncoder.encodeRaw(text, EncodeOptions(border = 4)), 4)
         val negated = Image(img.width, img.height, ByteArray(img.data.size) { i ->
             if (i % 4 == 3) img.data[i] else (255 - (img.data[i].toInt() and 0xFF)).toByte()
         })
@@ -378,7 +377,7 @@ class SyntheticTest {
     @Test
     fun `mirrored raster and photo decode`() {
         val text = "MIRROR IMAGE 2026"
-        val raster = TestImages.matrixToImage(TestEncoder.encodeRaw(text, border = 4), 4)
+        val raster = TestImages.matrixToImage(QREncoder.encodeRaw(text, EncodeOptions(border = 4)), 4)
         assertEquals(text, read(TestImages.mirror(raster)))
         val photo = TestImages.readLuma("boofcv-v3/detection/blurred/image007.jpg")
         assertEquals(read(photo), read(TestImages.mirror(photo)))

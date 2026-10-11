@@ -1,17 +1,17 @@
-# QR - Kotlin QR Code Reader Library
+# QR - Kotlin QR Code Library
 
 **Repository**: https://github.com/limpbrains/qr
 
-A pure Kotlin library (stdlib only, JDK 17+) for reading/decoding QR codes from raw image data.
-This is a Kotlin port of the decoder in Paul Miller's [paulmillr/qr](https://github.com/paulmillr/qr),
-kept bit-exact with the JS. Encoding is not ported.
+A pure Kotlin library (stdlib only, JDK 17+) for encoding QR codes and decoding them from raw image
+data. This is a Kotlin port of the encoder and decoder in Paul Miller's
+[paulmillr/qr](https://github.com/paulmillr/qr), kept bit-exact with the JS.
 
 ## Build & Test
 
 ```bash
 ./gradlew build
-./gradlew test                    # everything (~23 s)
-./gradlew test -PskipExhaustive   # skip @Tag("exhaustive"): ImageDecodingTest + full VectorTest (~16 s)
+./gradlew test                    # everything
+./gradlew test -PskipExhaustive   # skip @Tag("exhaustive"): ImageDecodingTest, full VectorTest, full EncoderVectorTest
 ./gradlew test -PonlyExhaustive   # only the exhaustive tests
 ./gradlew publishToMavenLocal
 ```
@@ -36,7 +36,13 @@ src/main/kotlin/qr/
 ├── RS.kt           # Reed-Solomon generator cache + Berlekamp-Massey/Chien/Forney corrector
 ├── GF256.kt        # GF(2^8) EXP/LOG tables (0x11d)
 ├── Payload.kt      # Segment parser: numeric, alphanumeric, byte, ECI (WHATWG charsets)
-└── QRInfo.kt       # Spec tables (BYTES, WORDS_PER_BLOCK, ECC_BLOCKS), mask/format/version bits
+├── QRInfo.kt       # Spec tables (BYTES, WORDS_PER_BLOCK, ECC_BLOCKS), mask/format/version bits
+├── QREncoder.kt    # Encoder facade (JS encodeQR): validation, version pick, encodeRaw/Ascii/Term/Svg/Gif/DataUrl
+├── Segments.kt     # Mode detection, capacity/byteCapacity, single-segment bit stream + padding + RS interleave
+├── Symbol.kt       # Alignment positions, per-version template/zigzag cache, drawSymbol (mask pick), drawInfo
+├── Penalty.kt      # Mask penalty score (N1-N4) on the test-form symbol
+├── Renderers.kt    # Raster (border/scale map) + raw/ascii/term/svg/gif/data-url renderers, internal base64
+└── Utf8.kt         # WHATWG TextEncoder UTF-8 (lone surrogate -> U+FFFD) and UTF-8 length
 
 tools/              # JS dump scripts that generate the parity fixtures (see tools/README.md)
 ```
@@ -44,8 +50,12 @@ tools/              # JS dump scripts that generate the parity fixtures (see too
 Tests (`src/test/kotlin/qr/`): `SyntheticTest`, `QRDecoderTest`, `QRScannerTest`, `RealImageTest`,
 `ImageDecodingTest` (BoofCV parity incl. points), `PointsTest`, `CallbacksTest`, `BatchTest`, `VectorTest` (small-vectors), `LayerDumpTest`/`FinderDumpTest`/
 `ScheduleDumpTest` (stage parity), `LumaParityTest`, `HomographyTest`, `RSTest`, `PayloadTest`,
-`QRInfoTest`, `TestEncoderTest`, `ImageVectorsTest`; helpers `TestEncoder` (port of JS encodeQR for synthetic symbols),
-`JpegLuma`/`PngLuma` (ports of JS test/misc/jpg.ts, png.ts), `TestImages`, `ImageVectors` (generated).
+`QRInfoTest`, `ImageVectorsTest`; encoder: `EncoderTest` (raw fixtures, JS drawSymbol/API/encodeData
+goldens, spec tables), `EncoderVectorTest` (small vectors via `encodeAscii`), `PenaltyTest`,
+`EncodeOptionsTest` (validation and option semantics), `RendererTest` (render fixtures, GIF structure +
+ImageIO + decoder round-trip), `Utf8Test`; helpers `TestSymbols` (codewords → symbol matrix for decoder
+tests), `JsEncoderGoldens` (verbatim JS test data), `JpegLuma`/`PngLuma` (ports of JS test/misc/jpg.ts,
+png.ts), `TestImages`, `ImageVectors` (generated).
 
 ## Pipeline (decode.ts)
 
@@ -65,6 +75,24 @@ Tests (`src/test/kotlin/qr/`): `SyntheticTest`, `QRDecoderTest`, `QRScannerTest`
 
 Failures are `Fail` tags (finder/dimension/alignment/timing/version/format/rs/data), not exceptions,
 on the hot path; `QRDecoder` maps the terminal tag to an exception.
+
+## Encoder pipeline (index.ts)
+
+`QREncoder.prepare` follows `encodeQR` L1175-1258 in the JS check order:
+
+1. **Validate**: version (1..40), then `detectType` (or `options.encoding`), then mode letters
+   (`Unknown letter`), mask (0..7), UTF-8 length pre-check against `byteCapacity` (built-in encoder only).
+2. **Segments**: `textEncoder`/`Utf8.encode` for byte mode,
+   smallest fitting version (or the explicit one), then `Segments.encodeData`: one segment (mode,
+   length, data), terminator, pad bytes, `RS.encode` per block, interleave.
+3. **Symbol**: per-version template (finders, timing, alignment, reserved areas) and zigzag order,
+   cached in an `AtomicReferenceArray(40)`; data bits placed along the zigzag.
+4. **Mask**: with no `mask`, all eight are scored by `Penalty.score` on the test form (no format/version
+   info); the first lowest wins.
+5. **Info**: format bits, dark module, version bits (v7+).
+6. **Raster**: border (> 0) and scale (1..1024) checked after encoding (capacity errors win), output
+   side limit per renderer, output-pixel → module map.
+7. **Render**: `Renderers.raw/ascii/term/svg/gif`, `dataUrl` = base64 of the GIF.
 
 ## Public API
 
@@ -87,6 +115,13 @@ on the hot path; `QRDecoder` maps the terminal tag to an exception.
   imageOnBitmap)` — JS `DecodeOpts`. `pointsOnDetect(FinderPoints, DecodeResult)` fires once per scan
   (success, or terminal failure after a report); `imageOnResult` gets the masked module grid (RGBA,
   1 px/module); `imageOnBitmap` each binarized layer.
+- `QREncoder.encodeRaw(text, options = EncodeOptions()): Array<BooleanArray>` (rows `[y][x]`, true =
+  dark), `encodeAscii(...): String`, `encodeTerm(...): String`, `encodeSvg(...): String`,
+  `encodeGif(...): ByteArray`, `encodeDataUrl(...): String` — JS `encodeQR(text, output, opts)`.
+  Stateless, thread-safe; every validation error is an `IllegalArgumentException` with the JS message.
+- `EncodeOptions(ecc = MEDIUM, encoding: Encoding? = null, textEncoder: ((String) -> ByteArray)? = null,
+  version: Int? = null, mask: Int? = null, border = 2, scale = 1, optimize = true)` — JS `QrOpts`;
+  `Encoding` = NUMERIC, ALPHANUMERIC, BYTE.
 - `PixelFormat`: RGB, RGBA, RGBX, BGRA, BGRX, I420, I420A, I422, I444, NV12, I420P10, I420P12;
   `PixelFormat.GRAY` is a `@JvmField` alias of `I420` (`GRAY.name == "I420"`, `valueOf("GRAY")` throws).
 
@@ -107,7 +142,15 @@ The port is verified stage by stage against fixtures dumped from the JS sources 
   doubles; NaN/±Infinity/-0 as strings) with the callback set; `ImageDecodingTest.points*` compares
   every number with `Double.compare` and prints images whose points-mode outcome differs from
   `decode-default.json` (the report() hazard; none on the current corpus).
-- **Math**: `hypot-fixture.txt`/`cbrt-fixture.txt` (V8 values); `encoder-fixtures.txt` for TestEncoder.
+- **Math**: `hypot-fixture.txt`/`cbrt-fixture.txt` (V8 values).
+- **Encoder**: `EncoderVectorTest` compares `encodeAscii` with the `out` string of all 9281 small vectors
+  (exact strings). `encoder-fixtures.txt` pins JS `encodeQR(..., 'raw')` grids (`EncoderTest`);
+  `encoder-renders.txt` pins JS svg/term/data-url/ascii outputs, incl. multi-digit SVG paths and the
+  GIF `W*W % 126 == 0` clear-code case (`RendererTest`). GIF output is decoded with ImageIO and compared
+  pixel-exact with `encodeRaw`, and decoded back to the text by `QRDecoder`. The upstream qr.test.ts /
+  encode.test.ts goldens (drawSymbol grids, Full API outputs, encodeData codewords, python-qrcode
+  penalty grids) are copied verbatim into `JsEncoderGoldens`; option/error cases are in
+  `EncodeOptionsTest`, gif.test.ts cases in `RendererTest`.
 
 ## Test Results (2026-10-11, v0.7.2)
 
@@ -119,6 +162,9 @@ The port is verified stage by stage against fixtures dumped from the JS sources 
 | `pointsOnDetect` default / all mode vs JS dump | 565/565 / 565/565 identical (outcome + every reported number) |
 | JS DECODED table, default (536 detection images) | 311 decoded, JS 311 |
 | JS DECODED table, all mode | 326 decoded, JS 326 |
+| Encoder small vectors (`encodeAscii` vs `out`) | 9281/9281 identical |
+| Encoder raw / render fixtures vs JS | all identical |
+| GIF via ImageIO vs `encodeRaw` | pixel-exact |
 
 ## Accepted Deviations from JS
 
@@ -133,6 +179,10 @@ The port is verified stage by stage against fixtures dumped from the JS sources 
   in JS. The `decode-points.json.gz` fixture runs with `pointsOnDetect` set and the reported geometry
   matches JS bit-exactly on all 565 images; no image in the current corpus changes outcome when the
   callback is set.
+- Encoder errors: every validation error is an `IllegalArgumentException` with the JS message (JS mixes
+  `Error`/`RangeError`/`TypeError`). JS type checks that Kotlin types make impossible are dropped.
+- Encoder options are `Int`-only: JS fractional/NaN/Infinity `border`/`scale` cases do not apply.
+- `data-url` uses an internal base64 encoder (no `java.util.Base64`, which needs Android API 26).
 - Gray input: any buffer of at least `w * h` bytes other than exactly 3x/4x is treated as gray
   (Y-plane pass-through); strided input via `addImage(..., offset, stride)`.
 

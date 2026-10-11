@@ -18,7 +18,7 @@ class PointsTest {
     // decode.test.ts L517-596
     @Test
     fun `reports finder-derived bounds and detected aligners`() {
-        val raw = TestEncoder.encodeRaw("OVERLAY", version = 2, ecc = ErrorCorrection.MEDIUM, mask = 0, border = 4)
+        val raw = QREncoder.encodeRaw("OVERLAY", EncodeOptions(version = 2, ecc = ErrorCorrection.MEDIUM, mask = 0, border = 4))
         val img = TestImages.matrixToImage(raw, 4)
         assertEquals(132, img.width)
         val events = ArrayList<Pair<FinderPoints, DecodeResult>>()
@@ -85,7 +85,7 @@ class PointsTest {
         val version = 7
         val border = 4
         val scale = 8
-        val raw = TestEncoder.encodeRaw(payload, version = version, border = border, ecc = ErrorCorrection.LOW, mask = 0)
+        val raw = QREncoder.encodeRaw(payload, EncodeOptions(version = version, border = border, ecc = ErrorCorrection.LOW, mask = 0))
         val modules = 17 + 4 * version
         val width = raw[0].size * scale
         val height = raw.size * scale
@@ -136,7 +136,7 @@ class PointsTest {
     // decode-batch.test.ts L48-83
     @Test
     fun `reports one terminal success or failure rather than projection attempts`() {
-        val raw = TestEncoder.encodeRaw("A", version = 1, ecc = ErrorCorrection.LOW, mask = 0, border = 4)
+        val raw = QREncoder.encodeRaw("A", EncodeOptions(version = 1, ecc = ErrorCorrection.LOW, mask = 0, border = 4))
         val good = TestImages.matrixToImage(raw, 4)
         val failedRaw = Array(raw.size) { raw[it].copyOf() }
         for (y in 12 until 16) for (x in 12 until 16) failedRaw[y][x] = !failedRaw[y][x]
@@ -161,7 +161,7 @@ class PointsTest {
     // decode-batch.test.ts L21-46
     @Test
     fun `batch fires once per image`() {
-        fun image(text: String, scale: Int) = TestImages.matrixToImage(TestEncoder.encodeRaw(text, border = 4), scale)
+        fun image(text: String, scale: Int) = TestImages.matrixToImage(QREncoder.encodeRaw(text, EncodeOptions(border = 4)), scale)
         fun pad(image: Image, width: Int): Image {
             val data = ByteArray(width * image.height * 4) { 255.toByte() }
             val offset = (width - image.width) shr 1

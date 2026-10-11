@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Writes the encodeQR reference grids for TestEncoderTest (src/test/resources/encoder-fixtures.txt).
+// Writes the encodeQR reference grids for EncoderTest (src/test/resources/encoder-fixtures.txt).
 // Usage (node >= 22): node --experimental-strip-types tools/js-dump/encoder-fixtures.mjs <qr-paulmillr-dir> > out.txt
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';

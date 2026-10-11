@@ -76,7 +76,7 @@ class QRDecoderTest {
     }
 
     private fun symbol(text: String, version: Int? = null) =
-        TestEncoder.encodeRaw(text, version = version, ecc = ErrorCorrection.LOW, mask = 0, border = 4)
+        QREncoder.encodeRaw(text, EncodeOptions(version = version, ecc = ErrorCorrection.LOW, mask = 0, border = 4))
 
     @Test
     fun `facade decodes gray, RGB and RGBA rasters`() {
@@ -161,7 +161,7 @@ class QRDecoderTest {
     // decode.test.ts L228-288 (plus RGB): every explicit pixel format through decode(image, options).
     @Test
     fun `decode with options converts every explicit pixel format`() {
-        val rgba = TestImages.matrixToImage(TestEncoder.encodeRaw("PIXEL FORMATS", border = 4), 4)
+        val rgba = TestImages.matrixToImage(QREncoder.encodeRaw("PIXEL FORMATS", EncodeOptions(border = 4)), 4)
         val width = rgba.width
         val height = rgba.height
         val pixels = width * height

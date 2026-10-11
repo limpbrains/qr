@@ -9,7 +9,7 @@ class QRInfoTest {
     fun `capacity should return valid values for all versions and ECCs`() {
         for (version in 1..40) {
             for (ecc in ErrorCorrection.entries) {
-                val cap = TestEncoder.capacity(version, ecc)
+                val cap = Segments.capacity(version, ecc)
                 assertTrue(cap.words > 0)
                 assertTrue(cap.numBlocks > 0)
                 assertTrue(cap.blockLen >= 0)
@@ -94,7 +94,7 @@ class QRInfoTest {
         assertEquals(81, QRInfo.ECC_BLOCKS[ErrorCorrection.HIGH.ordinal][39])
         // Every version/level partitions BYTES into whole blocks of the stated ECC size.
         for (ecc in ErrorCorrection.entries) for (ver in 1..40) {
-            val c = TestEncoder.capacity(ver, ecc)
+            val c = Segments.capacity(ver, ecc)
             assertEquals(QRInfo.BYTES[ver - 1], c.total, "ver=$ver ecc=$ecc")
         }
     }

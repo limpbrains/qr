@@ -60,6 +60,28 @@ internal object RS {
         return res
     }
 
+    /**
+     * RS parity of [data] (0..255) with [eccWords] check words (index.ts rsEcc L318-336): LFSR
+     * remainder, four coefficients a word, shifted down one byte per data byte.
+     */
+    fun encode(data: IntArray, eccWords: Int): IntArray {
+        val mul32 = cached(eccWords).mul32
+        val stride = mul32.size ushr 8
+        val last = stride - 1
+        val w = IntArray(stride)
+        for (d in data) {
+            var cur = w[0]
+            val off = (d xor (cur and 0xff)) * stride
+            for (k in 0 until last) {
+                val next = w[k + 1]
+                w[k] = ((cur ushr 8) or (next shl 24)) xor mul32[off + k]
+                cur = next
+            }
+            w[last] = (cur ushr 8) xor mul32[off + last]
+        }
+        return IntArray(eccWords) { j -> (w[j ushr 2] ushr (8 * (j and 3))) and 0xff }
+    }
+
     /** Evaluate a low-degree-first polynomial slice with Horner's method (decode.ts L984-988). */
     fun evalLow(poly: IntArray, offset: Int, length: Int, x: Int): Int {
         var value = 0
