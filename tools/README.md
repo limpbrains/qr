@@ -10,6 +10,7 @@ the `.ts` sources directly. Commands below run from the `qr/` directory.
 |---|---|---|---|
 | `extract_decoded.py` | `<decode.test.ts> <js-commit-sha>` | Kotlin source (stdout) | `ImageVectors.kt` (DECODED table, DECODED_ALL_ONLY, high-density PNG text) |
 | `js-dump/dump-decode.mjs` | `[--all] <qr-paulmillr-dir> [image...]` | JSON (stdout), default: all detection/decoding/issues/misc images | `dumps/decode-default.json`, `dumps/decode-all.json` (ImageDecodingTest) |
+| `js-dump/dump-decode.mjs` | `--points [--all] <qr-paulmillr-dir> [image...]` | gzipped JSON (stdout, one image per line): result/fail plus every `pointsOnDetect` payload, flattened as `[tl, tr, [brX, brY], bl, [aligner...], bounds, outline, bbox]` (FinderPoint = x, y, moduleSize, 4 corners), NaN/±Infinity/-0 as strings | `dumps/decode-points.json.gz`, `dumps/decode-points-all.json.gz` (ImageDecodingTest points passes) |
 | `js-dump/dump-layers.mjs` | `<qr-paulmillr-dir> <image> [maxW maxH]` | JSON (stdout): per-layer CRCs, finder records, mandatory pick | `dumps/layers/*.json` (LayerDumpTest, FinderDumpTest) |
 | `js-dump/dump-layers.mjs` | `--schedule <qr-paulmillr-dir> <image> [maxW maxH]` | JSON (stdout): retry-schedule sets and pop order | `dumps/schedule/*.json` (ScheduleDumpTest) |
 | `js-dump/dump-layers.mjs` | `--synthetic <W> <H> <out.pgm>` | deterministic gray PGM | `dumps/synthetic-*.pgm` |
@@ -33,6 +34,9 @@ python3 tools/extract_decoded.py $JS/test/decode.test.ts $(git -C $JS rev-parse 
 # Whole-pipeline decode results (565 images each)
 n tools/js-dump/dump-decode.mjs $JS > $R/dumps/decode-default.json
 n tools/js-dump/dump-decode.mjs --all $JS > $R/dumps/decode-all.json
+# Same with pointsOnDetect set (default ~650 KB plain; all mode > 1 MB, so the script gzips it)
+n tools/js-dump/dump-decode.mjs --points $JS > $R/dumps/decode-points.json.gz
+n tools/js-dump/dump-decode.mjs --points --all $JS > $R/dumps/decode-points-all.json.gz
 
 # Luma CRC guard (539 images)
 n tools/js-dump/luma-crc.mjs $JS $R/boofcv-luma-crc32.json

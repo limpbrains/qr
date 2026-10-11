@@ -37,8 +37,8 @@ class QRScannerTest {
         assertThrows<IllegalArgumentException> { s.addImage(2, 2, ByteArray(12), offset = 0, stride = 6) } // needs format
         s.addImage(2, 2, ByteArray(5), PixelFormat.GRAY) // planar: at least px bytes
         s.addImage(2, 2, ByteArray(10), PixelFormat.GRAY, offset = 2, stride = 4)
-        s.processLuma(4, 4)
-        assertThrows<IllegalArgumentException> { s.processLuma(5, 4) }
+        s.processImage(4, 4)
+        assertThrows<IllegalArgumentException> { s.processImage(5, 4) }
     }
 
     @Test
@@ -99,7 +99,7 @@ class QRScannerTest {
         assertEquals(4, s.layers.size)
         assertEquals(listOf(1, 2, 4, 8), s.layers.map { it.scale })
         assertEquals(listOf(1024 * 576, 512 * 288, 256 * 144, 128 * 72), s.layers.map { it.luma.size })
-        s.processLuma(300, 200)
+        s.processImage(300, 200)
         assertEquals(listOf(true, true, false, false), s.layers.map { it.used })
         assertEquals(listOf(300, 150, 0, 0), s.layers.map { it.width })
         assertEquals(listOf(100, 0, 0), s.layers.drop(1).map { it.height })
@@ -107,10 +107,10 @@ class QRScannerTest {
         assertEquals(listOf(10, 5, 0, 0), s.layers.map { it.words })
         assertTrue(s.layers[0].search)
         s.nativeLimit = 199
-        s.processLuma(300, 200)
+        s.processImage(300, 200)
         assertFalse(s.layers[0].search) // native side 200 > nativeLimit
         assertTrue(s.layers[1].search)
-        s.processLuma(300, 127)
+        s.processImage(300, 127)
         assertTrue(s.layers[0].search) // shorter side < 128 always searches native
         assertFalse(s.layers[1].used)
         assertEquals(1, QRScanner(127, 4096).layers.size)
@@ -140,7 +140,7 @@ class QRScannerTest {
     @Test
     fun growFindersDoublesUpToCap() {
         val s = QRScanner(100, 100)
-        s.processLuma(100, 100)
+        s.processImage(100, 100)
         val layer = s.layers[0]
         assertEquals(64, layer.state.size)
         layer.patterns[5] = 3.5
@@ -258,7 +258,7 @@ class QRScannerTest {
         val s = QRScanner(img.width + 40, img.height + 20)
         val owned = s.luma
         System.arraycopy(img.data, 0, s.luma, 0, img.data.size)
-        s.processLuma(img.width, img.height)
+        s.processImage(img.width, img.height)
         assertSame(owned, s.luma)
         assertEquals(img.width, s.width)
         assertEquals(listOf("ZERO COPY LUMA"), s.decode())
@@ -281,6 +281,99 @@ class QRScannerTest {
         assertArrayEquals(tight.luma, strided.luma)
         assertEquals(listOf("STRIDED Y PLANE"), tight.decode())
         assertEquals(listOf("STRIDED Y PLANE"), strided.decode())
+    }
+
+    // decode-batch.test.ts L390-436: every byte format converts into the same reused arena.
+    @Test
+    fun allPixelFormatsConvert() {
+        val s = QRScanner(64, 64)
+        val luma = s.luma
+        val rgb = bytes(4, 8, 12, 20, 24, 28)
+        val rgba = bytes(4, 8, 12, 99, 20, 24, 28, 77)
+        val actual = ArrayList<Pair<PixelFormat, List<Int>>>()
+        fun add(data: ByteArray, format: PixelFormat) {
+            s.addImage(2, 1, data, format)
+            actual.add(format to s.luma.copyOf(2).map { it.toInt() and 0xFF })
+        }
+        add(rgb, PixelFormat.RGB)
+        for (f in listOf(PixelFormat.RGBA, PixelFormat.RGBX, PixelFormat.BGRA, PixelFormat.BGRX)) add(rgba, f)
+        for (f in listOf(PixelFormat.I420, PixelFormat.I420A, PixelFormat.I422, PixelFormat.I444, PixelFormat.NV12))
+            add(bytes(8, 24), f)
+        add(bytes(0, 2, 0, 3), PixelFormat.I420P10)
+        add(bytes(0, 8, 0, 12), PixelFormat.I420P12)
+        val expected = PixelFormat.entries.map {
+            it to if (it.bits == 8) listOf(8, 24) else listOf(128, 192)
+        }
+        assertEquals(expected, actual)
+        assertSame(luma, s.luma)
+        assertSame(PixelFormat.I420, PixelFormat.GRAY)
+    }
+
+    // decode.test.ts L182-195 (stride arena) and decode-batch.test.ts L334-341 (arena limit).
+    @Test
+    fun scannerStride() {
+        assertEquals(48, QRScanner(4, 3, DecodeOptions(), stride = 4).luma.size)
+        assertEquals(16, QRScanner(4, 4).luma.size)
+        val values = bytes(4, 8, 12, 16, 20, 24, 28, 32)
+        val wide = ByteArray(3 * values.size) { values[it / 3] }
+        val padded = QRScanner(4, 4, DecodeOptions(), stride = 4)
+        padded.addImage(4, 2, wide, PixelFormat.RGB)
+        assertEquals(4, padded.width)
+        assertEquals(2, padded.height)
+        assertArrayEquals(values, padded.luma.copyOf(8))
+        assertSame(padded.luma, padded.layers[0].luma)
+        val e = assertThrows<IllegalArgumentException> { QRScanner(4096, 4096, DecodeOptions(), stride = 5) }
+        assertTrue(e.message!!.contains("arena expected <= 67108864"))
+        assertThrows<IllegalArgumentException> { QRScanner(4, 4, DecodeOptions(), stride = 0) }
+        assertThrows<IllegalArgumentException> { QRScanner(4, 4, DecodeOptions(effort = 0)) }
+    }
+
+    // decode.test.ts L196-226: pixels written directly into the arena convert in place.
+    @Test
+    fun processImageInPlace() {
+        val s = QRScanner(4, 4, DecodeOptions(), stride = 4)
+        val owned = s.luma
+        val padded = bytes(99, 99, 4, 8, 12, 0, 20, 24, 28, 0, 99, 36, 40, 44, 0, 52, 56, 60, 0, 99)
+        System.arraycopy(padded, 0, s.luma, 0, padded.size)
+        s.processImage(2, 2, PixelFormat.RGBA, offset = 2, stride = 9)
+        assertEquals(2, s.width)
+        assertEquals(2, s.height)
+        assertArrayEquals(bytes(8, 24, 40, 56), s.luma.copyOf(4))
+        assertSame(owned, s.luma)
+
+        val direct = QRScanner(4, 3, DecodeOptions(), stride = 4)
+        val rgba = bytes(4, 8, 12, 255, 20, 24, 28, 0, 36, 40, 44, 255, 52, 56, 60, 0)
+        System.arraycopy(rgba, 0, direct.luma, 0, rgba.size)
+        direct.processImage(2, 2, PixelFormat.RGBA, 0, 8)
+        assertArrayEquals(bytes(8, 24, 40, 56), direct.luma.copyOf(4))
+        // Default stride = width * step (tight rows of the named format).
+        System.arraycopy(rgba, 0, direct.luma, 0, rgba.size)
+        direct.processImage(2, 2, PixelFormat.RGBA)
+        assertArrayEquals(bytes(8, 24, 40, 56), direct.luma.copyOf(4))
+        // 10-bit samples in place.
+        System.arraycopy(bytes(0, 2, 0, 3, 0, 1, 255, 3), 0, direct.luma, 0, 8)
+        direct.processImage(2, 2, PixelFormat.I420P10)
+        assertArrayEquals(bytes(128, 192, 64, 255), direct.luma.copyOf(4))
+        assertThrows<IllegalArgumentException> { direct.processImage(2, 2, PixelFormat.RGBA, offset = 40, stride = 8) }
+    }
+
+    // decode.ts L586-596: planar formats accept oversize buffers, packed formats need exact sizes.
+    @Test
+    fun formatSizeValidation() {
+        val s = QRScanner(4, 4)
+        assertThrows<IllegalArgumentException> { s.addImage(2, 2, ByteArray(7), PixelFormat.I420P10) }
+        s.addImage(2, 2, ByteArray(9), PixelFormat.I420P12)
+        assertThrows<IllegalArgumentException> { s.addImage(2, 2, ByteArray(13), PixelFormat.RGB) }
+        assertThrows<IllegalArgumentException> { s.addImage(2, 2, ByteArray(17), PixelFormat.BGRX) }
+        assertEquals(PixelFormat.RGBA, QRScanner.validateImage(2, 2, ByteArray(16), null, 0, 0, 4, 4))
+        assertEquals(PixelFormat.NV12, QRScanner.validateImage(2, 2, ByteArray(6), PixelFormat.NV12, 0, 0, 4, 4))
+        assertThrows<IllegalArgumentException> { QRScanner.validateImage(2, 2, ByteArray(4), null, 0, 0, 4, 4) }
+        // options.format is the addImage default (JS `format = this.opts.format`).
+        val gray = QRScanner(4, 4, DecodeOptions(format = PixelFormat.I420))
+        gray.addImage(2, 2, bytes(1, 2, 3, 4))
+        assertArrayEquals(bytes(1, 2, 3, 4), gray.luma.copyOf(4))
+        gray.addImage(Image(2, 2, bytes(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)))
+        assertArrayEquals(bytes(5, 6, 7, 8), gray.luma.copyOf(4))
     }
 
     private fun bytes(vararg v: Int) = ByteArray(v.size) { v[it].toByte() }

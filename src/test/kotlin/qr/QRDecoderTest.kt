@@ -158,6 +158,94 @@ class QRDecoderTest {
         }
     }
 
+    // decode.test.ts L228-288 (plus RGB): every explicit pixel format through decode(image, options).
+    @Test
+    fun `decode with options converts every explicit pixel format`() {
+        val rgba = TestImages.matrixToImage(TestEncoder.encodeRaw("PIXEL FORMATS", border = 4), 4)
+        val width = rgba.width
+        val height = rgba.height
+        val pixels = width * height
+        val luma = IntArray(pixels) { rgba.data[4 * it].toInt() and 0xFF }
+        val halfWidth = (width + 1) / 2
+        val halfHeight = (height + 1) / 2
+        fun samples(f: PixelFormat) = when (f) {
+            PixelFormat.I420, PixelFormat.I420P10, PixelFormat.I420P12, PixelFormat.NV12 -> pixels + 2 * halfWidth * halfHeight
+            PixelFormat.I420A -> 2 * pixels + 2 * halfWidth * halfHeight
+            PixelFormat.I422 -> pixels + 2 * halfWidth * height
+            PixelFormat.I444 -> 3 * pixels
+            else -> error("packed")
+        }
+        fun planar(f: PixelFormat): ByteArray {
+            val bits = f.bits
+            val data = ByteArray(samples(f) * (if (bits == 8) 1 else 2)) { 128.toByte() }
+            if (bits == 8) for (i in 0 until pixels) data[i] = luma[i].toByte()
+            else for (i in 0 until pixels) {
+                val sample = luma[i] shl (bits - 8)
+                data[2 * i] = (sample and 255).toByte()
+                data[2 * i + 1] = (sample ushr 8).toByte()
+            }
+            return data
+        }
+        fun packed(f: PixelFormat): ByteArray {
+            val step = f.step
+            val data = ByteArray(step * pixels)
+            for (i in 0 until pixels) {
+                data[step * i] = luma[i].toByte()
+                data[step * i + 1] = luma[i].toByte()
+                data[step * i + 2] = luma[i].toByte()
+                if (step == 4) data[step * i + 3] = (i and 255).toByte()
+            }
+            return data
+        }
+        val formats = PixelFormat.entries
+        assertEquals(12, formats.size)
+        assertEquals(
+            formats.map { "PIXEL FORMATS" },
+            formats.map { f ->
+                val data = if (f.step <= 2) planar(f) else packed(f)
+                QRDecoder.decode(Image(width, height, data), DecodeOptions(format = f))
+            },
+        )
+    }
+
+    @Test
+    fun `decode with options leaves the cached scanner untouched`() {
+        synchronized(QRDecoder) {
+            val img = TestImages.matrixToImage(symbol("OWN SCANNER"), 3)
+            val field = QRDecoder::class.java.getDeclaredField("scanner").apply { isAccessible = true }
+            assertEquals("OWN SCANNER", QRDecoder.decode(img))
+            val cached = field.get(QRDecoder)
+            assertNotNull(cached)
+            assertEquals("OWN SCANNER", QRDecoder.decode(img, DecodeOptions()))
+            val other = TestImages.matrixToImage(symbol("OWN SCANNER"), 5)
+            assertEquals("OWN SCANNER", QRDecoder.decode(other, DecodeOptions(effort = 2)))
+            assertSame(cached, field.get(QRDecoder))
+        }
+    }
+
+    @Test
+    fun `decode with options maps failures and validates inputs`() {
+        val blank = Image(64, 64, ByteArray(64 * 64) { 255.toByte() })
+        assertThrows<FinderNotFoundException> { QRDecoder.decode(blank, DecodeOptions()) }
+        assertThrows<IllegalArgumentException> { QRDecoder.decode(blank, DecodeOptions(effort = 0)) }
+        assertThrows<IllegalArgumentException> {
+            QRDecoder.decode(Image(4, 4, ByteArray(16)), DecodeOptions(format = PixelFormat.RGBA))
+        }
+    }
+
+    @Test
+    fun `a callback may re-enter the facade`() {
+        val img = TestImages.matrixToImage(symbol("OUTER CALL"), 4)
+        val inner = TestImages.matrixToImage(symbol("INNER CALL"), 3)
+        val seen = ArrayList<String>()
+        val text = QRDecoder.decode(img, DecodeOptions(imageOnResult = {
+            seen.add(QRDecoder.decode(inner))
+            seen.add(QRDecoder.decode(inner, DecodeOptions()))
+        }))
+        assertEquals("OUTER CALL", text)
+        assertEquals(listOf("INNER CALL", "INNER CALL"), seen)
+    }
+
     @Test
     fun `concurrent facade calls do not corrupt results`() {
         val texts = listOf("THREAD ONE", "THREAD TWO PAYLOAD", "THREAD THREE 3333")
