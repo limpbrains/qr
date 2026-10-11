@@ -1,0 +1,8 @@
+{
+ "image": "src/test/resources/dumps/synthetic-32x48.pgm",
+ "maxWidth": 44,
+ "maxHeight": 60,
+ "layers": [
+  {"index":0,"setCount":0,"sets":[],"pops":[]}
+ ]
+}

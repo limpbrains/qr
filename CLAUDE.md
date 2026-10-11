@@ -2,157 +2,115 @@
 
 **Repository**: https://github.com/limpbrains/qr
 
-## Overview
-
-A pure Kotlin library for reading/decoding QR codes from raw image data. This is a Kotlin port of Paul Miller's [paulmillr/qr](https://github.com/paulmillr/qr).
+A pure Kotlin library (stdlib only, JDK 17+) for reading/decoding QR codes from raw image data.
+This is a Kotlin port of the decoder in Paul Miller's [paulmillr/qr](https://github.com/paulmillr/qr),
+kept bit-exact with the JS. Encoding is not ported.
 
 ## Build & Test
 
 ```bash
-./gradlew build      # Build the library
-./gradlew test       # Run tests
-./gradlew publishToMavenLocal  # Publish to local Maven repo
+./gradlew build
+./gradlew test                    # everything (~18 s)
+./gradlew test -PskipExhaustive   # skip @Tag("exhaustive"): ImageDecodingTest + full VectorTest (~15 s)
+./gradlew test -PonlyExhaustive   # only the exhaustive tests
+./gradlew publishToMavenLocal
 ```
+
+`test/vectors` is a git submodule (paulmillr/qr-code-vectors): `git submodule update --init --recursive`.
 
 ## Project Structure
 
 ```
 src/main/kotlin/qr/
-├── QRDecoder.kt      # Main public API (entry point)
-├── Image.kt          # Image data class
-├── Types.kt          # Point, Pattern, ErrorCorrection, EncodingType, exceptions
-├── Bitmap.kt         # 2D bitmap representation
-├── PatternDetector.kt # Finder & alignment pattern detection
-├── Transform.kt      # Perspective transformation
-├── BitDecoder.kt     # Data extraction from QR bitmap
-├── QRInfo.kt         # QR code constants, capacity tables, templates
-├── GaloisField.kt    # GF(256) finite field arithmetic
-├── ReedSolomon.kt    # Reed-Solomon error correction
-└── Interleave.kt     # Block interleaving for RS codes
+├── QRDecoder.kt    # One-shot facade (JS decodeQR): shared QRScanner, Fail -> exceptions
+├── QRScanner.kt    # Reusable scanner (JS _QRScanner): arenas, addImage/processLuma, decode, scan loop
+├── Image.kt        # Image(width, height, data); format inferred from data length
+├── Types.kt        # ErrorCorrection, Fail tags, PixelFormat, exceptions
+├── Layer.kt        # Pyramid layer + Plane: downscale, 8x8 block min/max, cuts, packed bitmap
+├── Finder.kt       # 1:1:3:1:1 run scan (both polarities), cross-check, refinement, Pattern/Triple
+├── Selection.kt    # Mandatory triple pick, polarity choice, exclusion, retry schedule/nextSet
+├── Projection.kt   # Dimension candidates, alignment search, timing gate, fine upgrade, v7+ tiles, sampling
+├── Homography.kt   # Projective maps, V8 Math.hypot / Math.cbrt ports
+├── GridDecoder.kt  # Version check, format candidates, unmask/zigzag, deinterleave, mirror retry
+├── RS.kt           # Reed-Solomon generator cache + Berlekamp-Massey/Chien/Forney corrector
+├── GF256.kt        # GF(2^8) EXP/LOG tables (0x11d)
+├── Payload.kt      # Segment parser: numeric, alphanumeric, byte, ECI (WHATWG charsets)
+└── QRInfo.kt       # Spec tables (BYTES, WORDS_PER_BLOCK, ECC_BLOCKS), mask/format/version bits
 
-src/test/kotlin/qr/
-├── VectorTest.kt       # Integration tests using qr-code-vectors
-├── ImageDecodingTest.kt # JPEG image decoding tests
-├── QRDecoderTest.kt    # Decoder API tests
-├── QRInfoTest.kt       # QR constants/tables tests
-├── BitmapTest.kt       # Bitmap operations tests
-├── GaloisFieldTest.kt  # GF math tests
-└── ReedSolomonTest.kt  # RS codec tests
+tools/              # JS dump scripts that generate the parity fixtures (see tools/README.md)
 ```
 
-## Key Components
+Tests (`src/test/kotlin/qr/`): `SyntheticTest`, `QRDecoderTest`, `QRScannerTest`, `RealImageTest`,
+`ImageDecodingTest` (BoofCV parity), `VectorTest` (small-vectors), `LayerDumpTest`/`FinderDumpTest`/
+`ScheduleDumpTest` (stage parity), `LumaParityTest`, `HomographyTest`, `RSTest`, `PayloadTest`,
+`QRInfoTest`, `TestEncoderTest`, `ImageVectorsTest`; helpers `TestEncoder` (port of JS encodeQR for synthetic symbols),
+`JpegLuma`/`PngLuma` (ports of JS test/misc/jpg.ts, png.ts), `TestImages`, `ImageVectors` (generated).
 
-### Public API (`QRDecoder.kt`)
-- `QRDecoder.decode(image: Image): String` - Main entry point
-- `QRDecoder.decode(width, height, data): String` - Convenience method
+## Pipeline (decode.ts)
 
-### Supported Image Formats
-- **Grayscale** (1 byte/pixel): Fastest, ideal for camera Y plane
-- **RGB** (3 bytes/pixel): Standard format
-- **RGBA** (4 bytes/pixel): With alpha channel
+1. **Luma**: `addImage` converts gray/RGB/RGBA (`(r + 2g + b) >> 2`, optional offset/stride) into the
+   native layer; up to three 2x-downscaled pyramid layers (min side >= 64).
+2. **Binarize** per layer: 8x8 block min/max, per-block cuts, packed 32-px-per-word bitmap.
+3. **Finders**: row scan for 1:1:3:1:1 runs in both polarities, cross-check, refine, dedupe.
+4. **Mandatory triple** per layer (coarsest first): best TL/TR/BL pick, polarity choice.
+5. **Projection**: dimension candidates from finder pitch, alignment search, timing gate, fine-plane
+   upgrade, tiled sampling for v7+.
+6. **Grid decode**: format candidates, unmask, zigzag read, deinterleave, RS (BM), payload parse;
+   retry on the transposed (mirrored) grid.
+7. **Retries**: scheduled triple sets per layer while `effort` retries and `timeLimit` allow.
+8. **Multi-QR**: `decode(all = true)` excludes decoded regions and repeats until a scan fails.
 
-Format is auto-detected from `data.size / (width * height)`.
+Failures are `Fail` tags (finder/dimension/alignment/timing/version/format/rs/data), not exceptions,
+on the hot path; `QRDecoder` maps the terminal tag to an exception.
 
-### Decoding Pipeline
-1. **Image → Bitmap**: Adaptive grayscale thresholding (8x8 blocks)
-   - Grayscale input: direct copy (no conversion)
-   - RGB/RGBA input: weighted average `(r + 2*g + b) / 4`
-2. **Pattern Detection**: Find 3 finder patterns (1:1:3:1:1 ratio)
-3. **Alignment**: Locate alignment patterns for perspective correction
-4. **Transform**: Apply perspective transformation
-5. **Bit Extraction**: Read data in zigzag pattern
-6. **RS Decode**: Apply Reed-Solomon error correction
-7. **Parse**: Decode numeric/alphanumeric/byte segments
+## Public API
 
-### Error Correction
-- Uses GF(256) with primitive polynomial 0x11d
-- Reed-Solomon encoding/decoding
-- Supports all QR ECC levels (L/M/Q/H)
+- `QRDecoder.decode(image: Image): String`, `QRDecoder.decode(width, height, data): String` — JS
+  defaults; throws `FinderNotFoundException` / `InvalidFormatException` / `InvalidVersionException` /
+  `QRDecodingException(tag)`. Thread-safe (serialized); the cached scanner is rebuilt when the frame size changes.
+- `QRScanner(maxWidth, maxHeight, effort = 1, timeLimitMs = 1000/60, nativeLimit = Int.MAX_VALUE,
+  textDecoder = null)`: construct once per camera stream, then `addImage(w, h, data, format, offset,
+  stride)` (or write into `luma` + `processLuma(w, h)`), `decode(all = false): List<String>`,
+  `lastFailure`, `clean()`. Not thread-safe. `effort = Int.MAX_VALUE` = JS Infinity.
 
-### ECI (Extended Channel Interpretation) Support
-- Supports 20+ character encodings (ISO-8859-*, UTF-8, UTF-16BE, Shift-JIS, Big5, GBK, EUC-KR, Windows-125x)
-- Automatic charset detection and decoding based on ECI indicator
-- Default UTF-8 for backward compatibility
-- **Location**: `BitDecoder.kt` (`eciToEncoding` map, `decodeWithEci()` function)
+## Parity Testing
 
-### Inverted QR Code Support
-- Automatically detects and decodes inverted (white-on-black) QR codes
-- If normal detection fails, retries with negated bitmap
-- **Location**: `PatternDetector.kt:769-780`, `Bitmap.kt:225-237` (negate method)
+The port is verified stage by stage against fixtures dumped from the JS sources by `tools/js-dump/*`
+(regeneration commands in `tools/README.md`):
 
-## Test Vectors
+- **Luma**: `JpegLuma`/`PngLuma` port the JS test image readers; `boofcv-luma-crc32.json` (539 images)
+  guards that Kotlin feeds the decoder the exact JS luma.
+- **Stages**: `dumps/layers/*.json` (per-layer luma/blocks/cuts/bitmap CRCs, finder records, mandatory
+  pick) and `dumps/schedule/*.json` (retry sets and pop order) for 10 images + 3 synthetic PGMs (5 dumps).
+- **Whole decode**: `dumps/decode-default.json` / `decode-all.json` hold the JS result or fail tag for
+  all 565 images; `ImageDecodingTest` is strict (any mismatch fails) and also checks the JS DECODED
+  table (`ImageVectors.kt`, generated by `tools/extract_decoded.py`).
+- **Math**: `hypot-fixture.txt`/`cbrt-fixture.txt` (V8 values); `encoder-fixtures.txt` for TestEncoder.
 
-Test vectors are loaded from `test/vectors/` (git submodule from paulmillr/qr-code-vectors):
-- `small-vectors.json.gz`: ASCII-art QR codes for decoding tests
-- `boofcv-v3/`: JPEG images for real-world decoding tests
+## Test Results (2026-10-11, v0.7.2)
 
-The `VectorTest.kt` uses a streaming JSON parser to avoid memory issues with the large vector file.
+| Suite | Result |
+|---|---|
+| Small vectors (`VectorTest`) | 9281/9281 |
+| BoofCV + issues + misc, default mode vs JS dump | 565/565 identical (text or fail tag) |
+| Same, all mode (`decode(true)`) vs JS dump | 565/565 identical (ordered results + terminal tag) |
+| JS DECODED table, default (536 detection images) | 311 decoded, JS 311 |
+| JS DECODED table, all mode | 326 decoded, JS 326 |
+| `./gradlew test` | 742 tests, 0 failures |
 
-## Dependencies
+## Accepted Deviations from JS
 
-- Kotlin stdlib only (no external image libraries)
-- JDK 17+
+- ECI 2 (cp437) decodes via Java `IBM437`; JS fails because `TextDecoder` has no ibm437 label.
+- `Math.hypot`/`Math.cbrt` are ported from V8 (java.lang/StrictMath differ in the last ulp).
+- Non-QR exceptions: besides `QRDecodingException`, `IllegalArgumentException` is thrown for invalid
+  input (side > 4096, bad buffer size) and `IllegalStateException` in the (practically unreachable)
+  finder-storage-exhaustion case; callers such as camera analyzers should catch `Exception`.
+- Gray input: any buffer of at least `w * h` bytes other than exactly 3x/4x is treated as gray
+  (Y-plane pass-through); strided input via `addImage(..., offset, stride)`.
 
 ## Known Limitations
 
-- No support for Kanji encoding mode
-- Higher version QR codes (Version 10+) may have lower success rates
-
-## Test Results
-
-| Test Suite | Pass Rate | Notes |
-|------------|-----------|-------|
-| Small vectors (synthetic) | 9134/9281 (98.42%) | **Validated: JavaScript decoder also fails on same 147 cases** |
-| JPEG images (boofcv) | 113/118 (95.76%) | Real-world images |
-
-### Test Parity Validation (2026-01-07)
-
-The 147 failing small vector tests (1.58%) are **NOT** a Kotlin porting issue. Testing revealed:
-
-- **JavaScript decoder also fails** on the exact same test cases with identical errors
-- Test 359: `RS.decode: invalid errors number` (both JS and Kotlin)
-- Test 992: `invalid version pattern` (JS) / `Invalid format pattern` (Kotlin)
-- Tests 1725-1743: `RS.decode: invalid errors number` (both JS and Kotlin)
-
-**Root cause**: The JavaScript library's 9281/9281 "pass" rate was for **encoding tests only**. The small-vectors test suite validates text → QR generation, but **never validates QR → text decoding**.
-
-The failing tests are:
-- Synthetic QR codes with 360+ characters (QR Version 8+)
-- Likely issues with test vector generation, not the decoder implementations
-- Both implementations show identical Reed-Solomon decoding failures
-
-**Conclusion**: 98.42% is the correct baseline for both JavaScript and Kotlin decoders.
-
-## Differences from JavaScript Implementation
-
-### 1. Grayscale Input Support (Kotlin-only)
-
-Kotlin accepts grayscale (1 byte/pixel) input, allowing direct Y-plane pass-through from camera frames. This skips YUV→RGB→grayscale conversion for 3-5x faster processing.
-
-**Location**: `Image.kt:24-30`, `PatternDetector.kt:56-68`
-
-### 2. Triangle Validation (Kotlin-only)
-
-Before early termination in finder detection, Kotlin validates that 3 patterns form a valid right isosceles triangle (ratio > 0.8). This prevents false positives when QR data contains 1:1:3:1:1-like patterns.
-
-**Location**: `PatternDetector.kt:384-401`
-
-### 3. Threshold Retry
-
-To compensate for JPEG decoder differences (jpeg-js vs ImageIO), `QRDecoder` retries with offsets `[0, -5, 5]`.
-
-**Location**: `QRDecoder.kt:21`
-
-### 4. Relaxed Finder Variance
-
-Finder detection retries with progressively relaxed variance parameters (2.0 → 2.5 → 3.0) to handle degraded images.
-
-**Location**: `PatternDetector.kt:229-246`
-
-## Key Files for Modifications
-
-- `QRDecoder.kt` - Entry point, threshold retry logic
-- `PatternDetector.kt` - Pattern detection, triangle validation, thresholding
-- `Transform.kt` - Perspective transformation
-- `BitDecoder.kt` - Data extraction and parsing
-- `ReedSolomon.kt` - Error correction
+- Kanji mode is not supported (JS does not decode it either).
+- ECI charset availability depends on the runtime (Android ICU may lack e.g. IBM437, x-windows-949,
+  ISO-8859-16) → such segments fail with `data`.
+- Not ported: `pointsOnDetect` / `imageOnResult` / `imageOnBitmap` callbacks, point reporting, async/cooperative scanning.

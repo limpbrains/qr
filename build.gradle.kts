@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "io.github.limpbrains"
-version = "0.0.3"
+version = "0.7.2"
 
 repositories {
     mavenCentral()
@@ -26,7 +26,9 @@ java {
 
 tasks.test {
     useJUnitPlatform()
-    jvmArgs = listOf("-Xmx2g")
+    if (project.hasProperty("skipExhaustive")) useJUnitPlatform { excludeTags("exhaustive") }
+    if (project.hasProperty("onlyExhaustive")) useJUnitPlatform { includeTags("exhaustive") }
+    jvmArgs = listOf("-Xmx2g", "-Djava.awt.headless=true")
     testLogging {
         showStandardStreams = true
         events("passed", "failed", "skipped")

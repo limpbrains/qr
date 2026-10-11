@@ -19,15 +19,31 @@ data class Image(
     }
 
     /**
-     * Returns the number of bytes per pixel (1 for Grayscale, 3 for RGB, 4 for RGBA).
+     * Pixel layout inferred from the buffer length: exactly 3 or 4 bytes per pixel -> RGB / RGBA;
+     * any other length of at least one byte per pixel -> GRAY (the JS planar rule accepts oversize
+     * luma buffers, decode.ts L589-596).
+     */
+    val format: PixelFormat
+        get() {
+            val px = width * height
+            return when {
+                data.size == 3 * px -> PixelFormat.RGB
+                data.size == 4 * px -> PixelFormat.RGBA
+                data.size >= px -> PixelFormat.GRAY
+                else -> throw IllegalArgumentException(
+                    "Unknown image format: ${data.size} bytes for ${width}x$height"
+                )
+            }
+        }
+
+    /**
+     * Returns the number of bytes per pixel (1 for Grayscale, 3 for RGB, 4 for RGBA), see [format].
      */
     val bytesPerPixel: Int
-        get() {
-            val perPixel = data.size / (width * height)
-            require(perPixel == 1 || perPixel == 3 || perPixel == 4) {
-                "Unknown image format, bytes per pixel=$perPixel"
-            }
-            return perPixel
+        get() = when (format) {
+            PixelFormat.GRAY -> 1
+            PixelFormat.RGB -> 3
+            PixelFormat.RGBA -> 4
         }
 
     override fun equals(other: Any?): Boolean {

@@ -1,0 +1,31 @@
+{
+ "image": "boofcv-v3/detection/pathological/image005.png",
+ "maxWidth": 296,
+ "maxHeight": 296,
+ "layers": [
+  {
+   "index": 0,
+   "setCount": 1,
+   "sets": [
+    [9.777777777777779,0,0,1,2]
+   ],
+   "pops": []
+  },
+  {
+   "index": 1,
+   "setCount": 1,
+   "sets": [
+    [9.777777777777779,0,0,1,2]
+   ],
+   "pops": []
+  },
+  {
+   "index": 2,
+   "setCount": 1,
+   "sets": [
+    [9.777777777777779,0,0,1,2]
+   ],
+   "pops": []
+  }
+ ]
+}

@@ -1,0 +1,10 @@
+{
+ "image": "boofcv-v3/detection/nominal/image001.jpg",
+ "maxWidth": 550,
+ "maxHeight": 308,
+ "layers": [
+  {"index":0,"setCount":0,"sets":[],"pops":[]},
+  {"index":1,"setCount":0,"sets":[],"pops":[]},
+  {"index":2,"setCount":0,"sets":[],"pops":[]}
+ ]
+}

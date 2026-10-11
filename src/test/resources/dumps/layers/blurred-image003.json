@@ -1,0 +1,109 @@
+{
+ "image": "boofcv-v3/detection/blurred/image003.jpg",
+ "width": 1024,
+ "height": 576,
+ "maxWidth": 1024,
+ "maxHeight": 576,
+ "layers": [
+  {
+   "index": 0,
+   "width": 1024,
+   "height": 576,
+   "words": 32,
+   "blockWidth": 128,
+   "blockHeight": 72,
+   "lumaCrc": 2702453610,
+   "blocksCrc": 1174047324,
+   "cutsCrc": 285829930,
+   "bitmapCrc": 3176229519,
+   "patternCount": 4,
+   "patterns": [
+    [385.07142857142856,248.07142857142858,11.10204081632653,7,0],
+    [669,323,2.4285714285714284,1,0],
+    [467.8,434.7,9.942857142857145,5,0],
+    [271.6,514.1,10.685714285714285,5,0]
+   ],
+   "pick": {
+    "ordinary": [0,2,3,0.07470826375143573],
+    "inverted": null,
+    "polarity": 0,
+    "triple": {"tl":[467.8,434.7,9.942857142857145],"tr":[271.6,514.1,10.685714285714285],"bl":[385.07142857142856,248.07142857142858,11.10204081632653],"tlIndex":2,"trIndex":3,"blIndex":0,"inverted":false},
+    "pickSum": 5,
+    "pickLo": 0,
+    "pickHi": 3
+   }
+  },
+  {
+   "index": 1,
+   "width": 512,
+   "height": 288,
+   "words": 16,
+   "blockWidth": 64,
+   "blockHeight": 36,
+   "lumaCrc": 3302809283,
+   "blocksCrc": 3853071111,
+   "cutsCrc": 2030215962,
+   "bitmapCrc": 2421283970,
+   "patternCount": 3,
+   "patterns": [
+    [192,124,5.428571428571429,1,0],
+    [234,217.5,5.0476190476190474,3,0],
+    [136,256.5,5.285714285714286,1,0]
+   ],
+   "pick": {
+    "ordinary": [0,1,2,0.09075861735673985],
+    "inverted": null,
+    "polarity": 0,
+    "triple": {"tl":[234,217.5,5.0476190476190474],"tr":[136,256.5,5.285714285714286],"bl":[192,124,5.428571428571429],"tlIndex":1,"trIndex":2,"blIndex":0,"inverted":false},
+    "pickSum": 3,
+    "pickLo": 0,
+    "pickHi": 2
+   }
+  },
+  {
+   "index": 2,
+   "width": 256,
+   "height": 144,
+   "words": 8,
+   "blockWidth": 32,
+   "blockHeight": 18,
+   "lumaCrc": 2249165952,
+   "blocksCrc": 2136286388,
+   "cutsCrc": 2261019924,
+   "bitmapCrc": 866508924,
+   "patternCount": 3,
+   "patterns": [
+    [96.5,61.5,2.904761904761905,3,0],
+    [117,108.5,2.7142857142857144,2,0],
+    [68,128.5,2.7142857142857144,2,0]
+   ],
+   "pick": {
+    "ordinary": [0,1,2,0.06479603867012497],
+    "inverted": null,
+    "polarity": 0,
+    "triple": {"tl":[117,108.5,2.7142857142857144],"tr":[68,128.5,2.7142857142857144],"bl":[96.5,61.5,2.904761904761905],"tlIndex":1,"trIndex":2,"blIndex":0,"inverted":false},
+    "pickSum": 3,
+    "pickLo": 0,
+    "pickHi": 2
+   }
+  },
+  {
+   "index": 3,
+   "width": 128,
+   "height": 72,
+   "words": 4,
+   "blockWidth": 16,
+   "blockHeight": 9,
+   "lumaCrc": 246459750,
+   "blocksCrc": 2681883394,
+   "cutsCrc": 1564784202,
+   "bitmapCrc": 3676933993,
+   "patternCount": 2,
+   "patterns": [
+    [48,31,1.4285714285714286,1,0],
+    [34,64,1.4285714285714286,1,0]
+   ],
+   "pick": {"ordinary":null,"inverted":null,"polarity":null,"triple":null,"pickSum":-1,"pickLo":0,"pickHi":0}
+  }
+ ]
+}
