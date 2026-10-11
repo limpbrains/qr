@@ -5,7 +5,7 @@ import qr.Finder.Triple
 // Projection and sampling (qr v0.7.2 `_QRScanner` private methods, decode.ts L1474-1517,
 // L1635-1712, L2017-2081, L2155-2175, L2487-2793). Every expression keeps the JS operand order
 // (bit-exact doubles). Stages return the decoded text or null with [QRScanner.fail] set.
-// `points` / `pointsOnDetect` reporting (`report`, L2084-2153) is not ported.
+// `report` (L2084-2152) builds `pointsOnDetect` geometry only when that callback is set.
 
 // JS number truthiness: neither 0 nor NaN.
 private fun truthy(v: Double): Boolean = v != 0.0 && !v.isNaN()
@@ -25,6 +25,82 @@ internal fun QRScanner.mapFinderQuad(out: DoubleArray, size: Int, t: Triple, brX
     Homography.packQuad(from, c, c, size - c, c, size - 6.5, size - 6.5, c, size - c)
     Homography.packQuad(to, t.tl.x, t.tl.y, t.tr.x, t.tr.y, brX, brY, t.bl.x, t.bl.y)
     mapQuad(out)
+}
+
+private val EMPTY_ALIGNERS = DoubleArray(0)
+
+/**
+ * decode.ts L2084-2152: map detected geometry into caller coordinates and cache the one terminal
+ * callback payload in [QRScanner.points] (last report wins). [aligners] holds [count] records of
+ * (located x, located y, module x, module y) in layer coordinates.
+ *
+ * Parity hazard (as JS): this rewrites the scanner's real `map`, `from` and `to` through
+ * [mapFinderQuad]; on the v7+ tile path the fallback projections then read the report-written
+ * matrices, so outcomes may differ when `pointsOnDetect` is set.
+ */
+private fun QRScanner.report(
+    layer: Layer,
+    t: Triple,
+    brX: Double,
+    brY: Double,
+    aligners: DoubleArray,
+    count: Int,
+    ms: Double,
+    size: Int,
+) {
+    if (options.pointsOnDetect == null) return
+    val tl = t.tl
+    val tr = t.tr
+    val bl = t.bl
+    val scale = layer.scale.toDouble()
+    val ox = layer.ox
+    val oy = layer.oy
+    fun pt(x: Double, y: Double): Point = Point(x * scale + ox, y * scale + oy)
+    // The located alignment center is inset from the fourth finder position.
+    // Keep it in `aligners`, while BR completes the logical finder-center
+    // square through the same homography used to sample the symbol.
+    val map = this.map
+    mapFinderQuad(map, size, t, brX, brY)
+    fun project(x: Double, y: Double): Point = pt(Homography.mapX(map, x, y), Homography.mapY(map, x, y))
+    fun quad(left: Double, top: Double, right: Double, bottom: Double): Quad = listOf(
+        project(left, top),
+        project(right, top),
+        project(right, bottom),
+        project(left, bottom),
+    )
+    fun marker(px: Double, py: Double, moduleSize: Double, x: Double, y: Double, radius: Double): FinderPoint {
+        val center = pt(px, py)
+        val centerMs = moduleSize * scale
+        val expected = project(x, y)
+        var corners = quad(x - radius, y - radius, x + radius, y + radius)
+        // Tiled high-version alignment searches can move a center away from the
+        // global homography; retain that local correction for its marker too.
+        val dx = center.x - expected.x
+        val dy = center.y - expected.y
+        if (truthy(dx) || truthy(dy)) corners = corners.map { Point(it.x + dx, it.y + dy) }
+        return FinderPoint(center.x, center.y, centerMs, corners)
+    }
+    val c = 3.5
+    val pad = 1.0 // Keep overlays one module outside the sampled symbol.
+    val bounds = quad(0.0, 0.0, size.toDouble(), size.toDouble())
+    // JS Math.min(...xs) / Math.max(...xs): NaN-propagating, as Kotlin Math.min/max.
+    val minX = Math.min(Math.min(Math.min(bounds[0].x, bounds[1].x), bounds[2].x), bounds[3].x)
+    val minY = Math.min(Math.min(Math.min(bounds[0].y, bounds[1].y), bounds[2].y), bounds[3].y)
+    val maxX = Math.max(Math.max(Math.max(bounds[0].x, bounds[1].x), bounds[2].x), bounds[3].x)
+    val maxY = Math.max(Math.max(Math.max(bounds[0].y, bounds[1].y), bounds[2].y), bounds[3].y)
+    points = FinderPoints(
+        tl = marker(tl.x, tl.y, tl.ms, c, c, c),
+        tr = marker(tr.x, tr.y, tr.ms, size - c, c, c),
+        br = project(size - c, size - c),
+        bl = marker(bl.x, bl.y, bl.ms, c, size - c, c),
+        aligners = List(count) { i ->
+            val pos = i * 4
+            marker(aligners[pos], aligners[pos + 1], ms, aligners[pos + 2], aligners[pos + 3], 5.0 / 2)
+        },
+        bounds = bounds,
+        outline = quad(-pad, -pad, size + pad, size + pad),
+        boundingBox = BoundingBox(minX, minY, maxX - minX, maxY - minY),
+    )
 }
 
 // decode.ts L1497-1502: grow the module grid, function map and codeword scratch to one symbol size.
@@ -387,7 +463,15 @@ private fun QRScanner.project(layer: Layer, t: Triple, pitch: Double): String? {
             val align = attempt == 0 && found
             val brX = if (align) alignX else brEstX
             val brY = if (align) alignY else brEstY
-            // JS reports detected points here when `pointsOnDetect` is set (not ported).
+            // L2638-2643.
+            if (options.pointsOnDetect != null) {
+                val inset = size - 6.5
+                report(
+                    layer, t, brX, brY,
+                    if (align) doubleArrayOf(alignX, alignY, inset, inset) else EMPTY_ALIGNERS,
+                    if (align) 1 else 0, ms, size,
+                )
+            }
             val map = this.map
             mapFinderQuad(map, size, t, brX, brY)
             val version = (size - 17) / 4
@@ -407,7 +491,7 @@ private fun QRScanner.project(layer: Layer, t: Triple, pitch: Double): String? {
                 var confirmed = confirm(sp, sm, size)
                 if (!confirmed && fine != 0) confirmed = confirm(p, map, size)
                 if (confirmed) {
-                    tiles(sp, sm, size, version)?.let { return it }
+                    tiles(sp, sm, size, version, layer, t, brX, brY, ms, fine)?.let { return it }
                     failed = fail
                     // A false local alignment can corrupt a valid global projection; rebuild that
                     // grid. As in JS, `sm`/`map` may hold the last tile's maps by now.
@@ -430,10 +514,24 @@ private fun QRScanner.project(layer: Layer, t: Triple, pitch: Double): String? {
  * use located centres as lattice nodes (others mapped through [sm]), then project each lattice
  * cell through its own homography; outer tiles extend to the symbol edge. tmp64 slots: nodes
  * `(yi * count + xi) * 2` in 0..97, located records `98 + i * 4` (x, y, module x, module y; JS
- * reads them only for `pointsOnDetect`). Null with [Fail.ALIGNMENT] when no aligner is found.
+ * reads them only for `pointsOnDetect` via [report]). Null with [Fail.ALIGNMENT] when no aligner is found.
  * `map`, `from` and `to` are clobbered by the per-tile homographies.
  */
-private fun QRScanner.tiles(sp: Plane, sm: DoubleArray, size: Int, version: Int): String? {
+private fun QRScanner.tiles(
+    sp: Plane,
+    sm: DoubleArray,
+    size: Int,
+    version: Int,
+    layer: Layer,
+    t: Triple,
+    brX: Double,
+    brY: Double,
+    ms: Double,
+    fine: Int,
+): String? {
+    val tileFine = sp === finePlane
+    val sc = if (tileFine) fine else 1
+    val off = (sc - 1) / 2.0
     val count = setAlignments(version)
     val positions = tmp8
     val nodes = tmp64
@@ -441,6 +539,9 @@ private fun QRScanner.tiles(sp: Plane, sm: DoubleArray, size: Int, version: Int)
     val last = positions[count - 1]
     val c = 0.5
     var locatedCount = 0
+    var tileBrX = 0.0
+    var tileBrY = 0.0
+    var hasTileBr = false
     for (yi in 0 until count)
         for (xi in 0 until count) {
             val x = positions[xi]
@@ -455,7 +556,11 @@ private fun QRScanner.tiles(sp: Plane, sm: DoubleArray, size: Int, version: Int)
                 located[pos + 2] = x + c
                 located[pos + 3] = y + c
                 locatedCount++
-                // JS also keeps the BR aligner (x == y == last) for `pointsOnDetect` (not ported).
+                if (x == last && y == last) {
+                    hasTileBr = true
+                    tileBrX = alignX
+                    tileBrY = alignY
+                }
                 nodes[node] = alignX
                 nodes[node + 1] = alignY
             } else {
@@ -497,6 +602,26 @@ private fun QRScanner.tiles(sp: Plane, sm: DoubleArray, size: Int, version: Int)
                 if (yi == count - 2) size else bottom,
             )
         }
-    // JS reports located aligners here when `pointsOnDetect` is set (not ported).
+    // L2755-2773: located aligners back to layer coordinates (fine-plane records divide out sc).
+    if (options.pointsOnDetect != null) {
+        val reportAligners = DoubleArray(locatedCount * 4)
+        for (i in 0 until locatedCount) {
+            val pos = 7 * 7 * 2 + i * 4
+            reportAligners[i * 4] = (located[pos] - off) / sc
+            reportAligners[i * 4 + 1] = (located[pos + 1] - off) / sc
+            reportAligners[i * 4 + 2] = located[pos + 2]
+            reportAligners[i * 4 + 3] = located[pos + 3]
+        }
+        report(
+            layer,
+            t,
+            if (hasTileBr) (tileBrX - off) / sc else brX,
+            if (hasTileBr) (tileBrY - off) / sc else brY,
+            reportAligners,
+            locatedCount,
+            ms,
+            size,
+        )
+    }
     return decodeGrid(size)
 }

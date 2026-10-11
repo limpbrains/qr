@@ -6,7 +6,8 @@ No external dependencies.
 
 ## Features
 
-- Decode QR codes from raw pixel data (Grayscale, RGB, or RGBA)
+- Decode QR codes from raw pixel data: all 12 JS pixel formats (RGB/RGBA/RGBX/BGRA/BGRX, I420/I420A/
+  I422/I444/NV12 luma planes, 10/12-bit I420P10/I420P12) plus `GRAY`
 - Optimized for camera frames - reusable `QRScanner`, pass the Y plane directly (with row stride)
 - Supports QR versions 1-40
 - All error correction levels (L, M, Q, H)
@@ -15,6 +16,8 @@ No external dependencies.
 - Inverted QR code detection - Automatically detects and decodes white-on-black QR codes
 - Perspective correction, mirrored codes, multiple QR codes per image
 - Reed-Solomon error correction
+- The full JS decoder option set: `effort`, `timeLimit`, `nativeLimit`, `textDecoder`, and the
+  `pointsOnDetect` / `imageOnResult` / `imageOnBitmap` callbacks
 
 ## Installation
 
@@ -96,19 +99,117 @@ override fun analyze(image: ImageProxy) {
 }
 ```
 
-Alternatively write tight luma rows straight into `scanner.luma` and call
-`scanner.processLuma(width, height)` before `decode()` (zero copy).
-
-Options (constructor):
-
-- `effort` (default 1): retry budget; higher values try more finder triples per frame,
-  `Int.MAX_VALUE` = unlimited.
-- `timeLimitMs` (default `1000.0 / 60`): wall-time budget for retries, `Double.POSITIVE_INFINITY` = none.
-- `nativeLimit` (default `Int.MAX_VALUE`): native-resolution search gate, settable between frames.
-- `textDecoder`: custom `(bytes, eci) -> String` for byte segments.
-
 `decode(all = true)` returns every QR code in the frame. After a failed decode,
 `scanner.lastFailure` holds the reason (`Fail.FINDER`, `Fail.RS`, ...). `clean()` zeroes all buffers.
+
+The short constructor `QRScanner(maxWidth, maxHeight, effort, timeLimitMs, nativeLimit, textDecoder)`
+covers the plain options; `QRScanner(maxWidth, maxHeight, options: DecodeOptions, stride = 1)` takes
+the full set, including callbacks.
+
+### `DecodeOptions`
+
+`DecodeOptions` is the JS `DecodeOpts`. Every field is optional:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `format` | `null` | Input `PixelFormat`. With `null`, the format is inferred from the buffer length (see below). |
+| `effort` | `1` | Retry budget, >= 1. Higher values try more finder triples per frame. `Int.MAX_VALUE` is JS `Infinity`. |
+| `timeLimitMs` | `1000.0 / 60` | Wall-time budget for retries. Finite and >= 0, or `Double.POSITIVE_INFINITY` for no limit. |
+| `nativeLimit` | `Int.MAX_VALUE` | Gate for the native-resolution search layer, >= 0. |
+| `textDecoder` | `null` | Custom `(bytes, eci) -> String` for byte segments. |
+| `pointsOnDetect` | `null` | `(FinderPoints, DecodeResult) -> Unit`. See [Callbacks](#callbacks). |
+| `imageOnResult` | `null` | `(Image) -> Unit`. Receives the sampled module grid. |
+| `imageOnBitmap` | `null` | `(Image) -> Unit`. Debug hook that receives each binarized layer. |
+
+Invalid values throw `IllegalArgumentException` when the scanner is constructed.
+
+### Pixel formats
+
+| `PixelFormat` | Bytes/pixel (`step`) | Luma source |
+|---|---|---|
+| `RGB` | 3 | `(r + 2g + b) >> 2` |
+| `RGBA`, `RGBX`, `BGRA`, `BGRX` | 4 | Same formula; the fourth byte is ignored. The formula is symmetric in r/b, so BGR order needs no swap. |
+| `I420`, `I420A`, `I422`, `I444`, `NV12` | 1 | The leading Y plane, 8-bit. Chroma and alpha planes are not read. |
+| `I420P10`, `I420P12` | 2 | The leading Y plane, 10/12-bit little-endian samples, shifted down to 8 bits. |
+| `GRAY` | 1 | Kotlin alias of `I420` (a tight 8-bit luma plane). |
+
+`PixelFormat.GRAY` is no longer its own enum entry: since the API-completion change it is a
+`@JvmField` alias of `I420`, so binary access to `PixelFormat.GRAY` keeps working. The change is
+source-breaking for an exhaustive `when` over `PixelFormat` and for code that relies on `name`,
+`valueOf`, `ordinal` or `entries`: `PixelFormat.GRAY.name == "I420"`, and `PixelFormat.valueOf("GRAY")` throws.
+
+When `format` is `null`, `addImage` infers only RGB or RGBA, and only from a length of exactly
+3·px or 4·px bytes, as JS does. `Image.format` (used by `QRDecoder`) also treats any other buffer of
+at least px bytes as `GRAY`.
+
+### `stride` and `processImage` (zero-copy input)
+
+`addImage(w, h, data, format, offset, stride)` reads a strided source. Here `offset` and `stride` are
+in bytes, and `stride = 0` means tight rows.
+
+Integrations that can write pixels straight into the scanner do this:
+
+1. Construct the scanner with `stride`, the number of bytes reserved per maximum-size pixel. This
+   makes `scanner.luma` large enough.
+2. Write the raw frame into `scanner.luma`.
+3. Call `processImage`. It converts the frame to tight luma in place.
+
+```kotlin
+val scanner = QRScanner(1920, 1080, DecodeOptions(), stride = 4) // luma holds 1920*1080*4 bytes
+frameBuffer.get(scanner.luma, 0, width * height * 4)               // raw BGRA written in place
+scanner.processImage(width, height, PixelFormat.BGRA)              // stride defaults to width * 4
+val texts = scanner.decode()
+```
+
+`processImage(w, h)` with its defaults (I420) handles tight 8-bit luma. The older
+`processLuma(w, h)` is deprecated in its favour.
+
+### `decode(image, options)` and `decodeBatch`
+
+```kotlin
+val text = QRDecoder.decode(Image(w, h, rgba), DecodeOptions(format = PixelFormat.RGBA, effort = 4))
+
+val batch: List<BatchResult> = QRDecoder.decodeBatch(images, DecodeOptions())
+batch.forEach { r -> println("${r.texts} ${r.failure} ${r.error}") }
+```
+
+`QRDecoder.decode(image, options)` builds a fresh scanner, with fresh buffers, on every call, because
+options and callbacks are bound to a scanner. Camera loops should keep their own
+`QRScanner(w, h, options)` instead.
+
+`decodeBatch` decodes every QR code in each image through one reusable scanner. Its capacity is set
+by `maxWidth`/`maxHeight` and defaults to 3840x3840. For each image it returns a `BatchResult(texts,
+failure, error)`. An image that throws (invalid, or too large) gets the exception in `error` and
+does not affect the images around it. Unlike the JS `decodeQRBatch`, it is synchronous.
+The default 3840x3840 arena is about 15 MB, so callers decoding small images should pass their
+actual maximum size as `maxWidth`/`maxHeight`.
+
+### Callbacks
+
+- `pointsOnDetect(points: FinderPoints, result: DecodeResult)` fires **once per scan**. It fires when
+  the scan succeeds (`DecodeResult.Text`), or when the scan fails terminally
+  (`DecodeResult.Failure(fail)`) after finder geometry was projected. It does not fire when nothing
+  got that far, for example on a blank image. With
+  `decode(all = true)`, there is one call per scan. All coordinates are in input-image pixels.
+  `FinderPoints` holds:
+  - `tl`, `tr`, `bl`: `FinderPoint(x, y, moduleSize, corners)`, where `corners` is the projected
+    7x7 finder square (clockwise from top-left)
+  - `br`: the projected virtual fourth finder centre
+  - `aligners`: the alignment patterns located in this attempt, as `FinderPoint`s with 5x5 corners
+  - `bounds`: the outer edges of the symbol
+  - `outline`: `bounds` plus one module of padding, for overlays
+  - `boundingBox`: `BoundingBox(x, y, width, height)` of `bounds`
+
+  As in JS, setting this callback makes the scanner re-project the finder quad before the v7+ tile
+  fallbacks, so it can change the outcome on high-version codes. The parity fixture runs with
+  `pointsOnDetect` set, and the reported geometry matches JS bit-exactly on all 565 images; no image
+  in the current corpus changes outcome when the callback is set.
+- `imageOnResult(image)` fires on success with the sampled module grid. The image is RGBA, one
+  pixel per module, black or white, and still masked.
+- `imageOnBitmap(image)` is a debug hook. It fires with each binarized layer, as RGBA, before finder
+  detection.
+
+Exceptions thrown from a callback propagate out of `decode`.
 
 ### Error handling (`QRDecoder`)
 
@@ -150,8 +251,10 @@ git submodule update --init --recursive
 This is a port of the decoder from paulmillr/qr. Results are identical to the JS
 decoder on every test image (565/565 BoofCV/issue/misc images, default and all-results modes) and on
 all 9281 small vectors; see [CLAUDE.md](CLAUDE.md) for the parity tests and the few accepted
-deviations. Kotlin additions: gray (Y-plane) input with offset/stride and the synchronous `QRScanner`
-API. Kanji mode and the JS callbacks (`pointsOnDetect`, `imageOnResult`) are not supported.
+deviations. The reported `pointsOnDetect` geometry is also bit-identical, as checked by
+`decode-points.json.gz`. Kotlin additions are gray (Y-plane) input with offset/stride and the
+synchronous `QRScanner` API. Not ported: async/cooperative scanning (`decodeAsync`), `BarcodeDetector`
+and the browser helpers (`dom.ts`).
 
 ## Acknowledgments
 

@@ -10,8 +10,8 @@ kept bit-exact with the JS. Encoding is not ported.
 
 ```bash
 ./gradlew build
-./gradlew test                    # everything (~18 s)
-./gradlew test -PskipExhaustive   # skip @Tag("exhaustive"): ImageDecodingTest + full VectorTest (~15 s)
+./gradlew test                    # everything (~23 s)
+./gradlew test -PskipExhaustive   # skip @Tag("exhaustive"): ImageDecodingTest + full VectorTest (~16 s)
 ./gradlew test -PonlyExhaustive   # only the exhaustive tests
 ./gradlew publishToMavenLocal
 ```
@@ -22,14 +22,15 @@ kept bit-exact with the JS. Encoding is not ported.
 
 ```
 src/main/kotlin/qr/
-├── QRDecoder.kt    # One-shot facade (JS decodeQR): shared QRScanner, Fail -> exceptions
-├── QRScanner.kt    # Reusable scanner (JS _QRScanner): arenas, addImage/processLuma, decode, scan loop
+├── QRDecoder.kt    # Facade (JS decodeQR/decodeQRBatch): shared QRScanner, decode(image, options), decodeBatch
+├── QRScanner.kt    # Reusable scanner (JS _QRScanner): arenas, addImage/processImage, decode, scan loop, callbacks
 ├── Image.kt        # Image(width, height, data); format inferred from data length
-├── Types.kt        # ErrorCorrection, Fail tags, PixelFormat, exceptions
+├── Types.kt        # ErrorCorrection, Fail tags, PixelFormat (12 JS formats), DecodeOptions, BatchResult, exceptions
+├── Points.kt       # FinderPoints/FinderPoint/BoundingBox/DecodeResult (pointsOnDetect payload)
 ├── Layer.kt        # Pyramid layer + Plane: downscale, 8x8 block min/max, cuts, packed bitmap
 ├── Finder.kt       # 1:1:3:1:1 run scan (both polarities), cross-check, refinement, Pattern/Triple
 ├── Selection.kt    # Mandatory triple pick, polarity choice, exclusion, retry schedule/nextSet
-├── Projection.kt   # Dimension candidates, alignment search, timing gate, fine upgrade, v7+ tiles, sampling
+├── Projection.kt   # Dimension candidates, alignment search, timing gate, fine upgrade, v7+ tiles, sampling, report()
 ├── Homography.kt   # Projective maps, V8 Math.hypot / Math.cbrt ports
 ├── GridDecoder.kt  # Version check, format candidates, unmask/zigzag, deinterleave, mirror retry
 ├── RS.kt           # Reed-Solomon generator cache + Berlekamp-Massey/Chien/Forney corrector
@@ -41,15 +42,17 @@ tools/              # JS dump scripts that generate the parity fixtures (see too
 ```
 
 Tests (`src/test/kotlin/qr/`): `SyntheticTest`, `QRDecoderTest`, `QRScannerTest`, `RealImageTest`,
-`ImageDecodingTest` (BoofCV parity), `VectorTest` (small-vectors), `LayerDumpTest`/`FinderDumpTest`/
+`ImageDecodingTest` (BoofCV parity incl. points), `PointsTest`, `CallbacksTest`, `BatchTest`, `VectorTest` (small-vectors), `LayerDumpTest`/`FinderDumpTest`/
 `ScheduleDumpTest` (stage parity), `LumaParityTest`, `HomographyTest`, `RSTest`, `PayloadTest`,
 `QRInfoTest`, `TestEncoderTest`, `ImageVectorsTest`; helpers `TestEncoder` (port of JS encodeQR for synthetic symbols),
 `JpegLuma`/`PngLuma` (ports of JS test/misc/jpg.ts, png.ts), `TestImages`, `ImageVectors` (generated).
 
 ## Pipeline (decode.ts)
 
-1. **Luma**: `addImage` converts gray/RGB/RGBA (`(r + 2g + b) >> 2`, optional offset/stride) into the
-   native layer; up to three 2x-downscaled pyramid layers (min side >= 64).
+1. **Luma**: `addImage` (or `processImage` in place over `luma`) converts one of the 12 JS formats
+   (RGB/RGBA/RGBX/BGRA/BGRX via `(r + 2g + b) >> 2`; I420/I420A/I422/I444/NV12 leading Y plane;
+   I420P10/I420P12 16-bit LE shifted to 8 bits; `GRAY` = `I420` alias; optional offset/stride) into
+   the native layer; up to three 2x-downscaled pyramid layers (min side >= 64).
 2. **Binarize** per layer: 8x8 block min/max, per-block cuts, packed 32-px-per-word bitmap.
 3. **Finders**: row scan for 1:1:3:1:1 runs in both polarities, cross-check, refine, dedupe.
 4. **Mandatory triple** per layer (coarsest first): best TL/TR/BL pick, polarity choice.
@@ -68,10 +71,24 @@ on the hot path; `QRDecoder` maps the terminal tag to an exception.
 - `QRDecoder.decode(image: Image): String`, `QRDecoder.decode(width, height, data): String` — JS
   defaults; throws `FinderNotFoundException` / `InvalidFormatException` / `InvalidVersionException` /
   `QRDecodingException(tag)`. Thread-safe (serialized); the cached scanner is rebuilt when the frame size changes.
-- `QRScanner(maxWidth, maxHeight, effort = 1, timeLimitMs = 1000/60, nativeLimit = Int.MAX_VALUE,
+- `QRDecoder.decode(image, options: DecodeOptions): String` — JS `decodeQR(img, opts)`; fresh scanner
+  per call (callbacks are bound at construction), same exceptions plus IAE for invalid options.
+- `QRDecoder.decodeBatch(images, options = DecodeOptions(), maxWidth = 3840, maxHeight = 3840):
+  List<BatchResult>` — JS `decodeQRBatch` (synchronous); `BatchResult(texts, failure, error)`, a
+  throwing image yields `error` without affecting its neighbours.
+- `QRScanner(maxWidth, maxHeight, options: DecodeOptions, stride = 1)` (full options incl. callbacks;
+  `stride` = bytes reserved per max-size pixel in `luma` for `processImage`) or the short
+  `QRScanner(maxWidth, maxHeight, effort = 1, timeLimitMs = 1000/60, nativeLimit = Int.MAX_VALUE,
   textDecoder = null)`: construct once per camera stream, then `addImage(w, h, data, format, offset,
-  stride)` (or write into `luma` + `processLuma(w, h)`), `decode(all = false): List<String>`,
-  `lastFailure`, `clean()`. Not thread-safe. `effort = Int.MAX_VALUE` = JS Infinity.
+  stride)` / `addImage(image)` (or write into `luma` + `processImage(w, h, format, offset, stride)`;
+  `processLuma` deprecated), `decode(all = false): List<String>`, `lastFailure`, `clean()`. Not
+  thread-safe. `effort = Int.MAX_VALUE` = JS Infinity.
+- `DecodeOptions(format, effort, timeLimitMs, nativeLimit, textDecoder, pointsOnDetect, imageOnResult,
+  imageOnBitmap)` — JS `DecodeOpts`. `pointsOnDetect(FinderPoints, DecodeResult)` fires once per scan
+  (success, or terminal failure after a report); `imageOnResult` gets the masked module grid (RGBA,
+  1 px/module); `imageOnBitmap` each binarized layer.
+- `PixelFormat`: RGB, RGBA, RGBX, BGRA, BGRX, I420, I420A, I422, I444, NV12, I420P10, I420P12;
+  `PixelFormat.GRAY` is a `@JvmField` alias of `I420` (`GRAY.name == "I420"`, `valueOf("GRAY")` throws).
 
 ## Parity Testing
 
@@ -85,6 +102,11 @@ The port is verified stage by stage against fixtures dumped from the JS sources 
 - **Whole decode**: `dumps/decode-default.json` / `decode-all.json` hold the JS result or fail tag for
   all 565 images; `ImageDecodingTest` is strict (any mismatch fails) and also checks the JS DECODED
   table (`ImageVectors.kt`, generated by `tools/extract_decoded.py`).
+- **Points**: `dumps/decode-points.json.gz` (default mode) and `dumps/decode-points-all.json.gz` (all mode,
+  ordered event list) hold the JS result/tag plus every `pointsOnDetect` payload (flattened, shortest
+  doubles; NaN/±Infinity/-0 as strings) with the callback set; `ImageDecodingTest.points*` compares
+  every number with `Double.compare` and prints images whose points-mode outcome differs from
+  `decode-default.json` (the report() hazard; none on the current corpus).
 - **Math**: `hypot-fixture.txt`/`cbrt-fixture.txt` (V8 values); `encoder-fixtures.txt` for TestEncoder.
 
 ## Test Results (2026-10-11, v0.7.2)
@@ -94,9 +116,9 @@ The port is verified stage by stage against fixtures dumped from the JS sources 
 | Small vectors (`VectorTest`) | 9281/9281 |
 | BoofCV + issues + misc, default mode vs JS dump | 565/565 identical (text or fail tag) |
 | Same, all mode (`decode(true)`) vs JS dump | 565/565 identical (ordered results + terminal tag) |
+| `pointsOnDetect` default / all mode vs JS dump | 565/565 / 565/565 identical (outcome + every reported number) |
 | JS DECODED table, default (536 detection images) | 311 decoded, JS 311 |
 | JS DECODED table, all mode | 326 decoded, JS 326 |
-| `./gradlew test` | 742 tests, 0 failures |
 
 ## Accepted Deviations from JS
 
@@ -105,6 +127,12 @@ The port is verified stage by stage against fixtures dumped from the JS sources 
 - Non-QR exceptions: besides `QRDecodingException`, `IllegalArgumentException` is thrown for invalid
   input (side > 4096, bad buffer size) and `IllegalStateException` in the (practically unreachable)
   finder-storage-exhaustion case; callers such as camera analyzers should catch `Exception`.
+- `decodeBatch` is synchronous (JS `decodeQRBatch` awaits `decodeAsync(true)`); results are identical.
+- `pointsOnDetect` hazard parity: as in JS, setting the callback makes `report()` rewrite the scanner's
+  homography (`map/from/to`) before the v7+ tile fallbacks, so it can change v7+ outcomes exactly as
+  in JS. The `decode-points.json.gz` fixture runs with `pointsOnDetect` set and the reported geometry
+  matches JS bit-exactly on all 565 images; no image in the current corpus changes outcome when the
+  callback is set.
 - Gray input: any buffer of at least `w * h` bytes other than exactly 3x/4x is treated as gray
   (Y-plane pass-through); strided input via `addImage(..., offset, stride)`.
 
@@ -113,4 +141,4 @@ The port is verified stage by stage against fixtures dumped from the JS sources 
 - Kanji mode is not supported (JS does not decode it either).
 - ECI charset availability depends on the runtime (Android ICU may lack e.g. IBM437, x-windows-949,
   ISO-8859-16) → such segments fail with `data`.
-- Not ported: `pointsOnDetect` / `imageOnResult` / `imageOnBitmap` callbacks, point reporting, async/cooperative scanning.
+- Not ported: async/cooperative scanning (`decodeAsync`), `BarcodeDetector`, `dom.ts`.
