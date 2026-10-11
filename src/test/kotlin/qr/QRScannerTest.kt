@@ -158,7 +158,7 @@ class QRScannerTest {
     fun nativeLimit() {
         val text = "NATIVE LIMIT"
         fun place(scale: Int, side: Int): Image {
-            val symbol = TestImages.matrixToImage(TestEncoder.encodeRaw(text, border = 4), scale)
+            val symbol = TestImages.matrixToImage(QREncoder.encodeRaw(text, EncodeOptions(border = 4)), scale)
             val data = ByteArray(side * side * 4) { 255.toByte() }
             val x0 = (side - symbol.width) shr 1
             val y0 = (side - symbol.height) shr 1
@@ -193,7 +193,7 @@ class QRScannerTest {
         assertEquals(listOf("Test 03"), max.decode())
     }
 
-    private fun symbol(text: String, scale: Int) = TestImages.matrixToImage(TestEncoder.encodeRaw(text, border = 4), scale)
+    private fun symbol(text: String, scale: Int) = TestImages.matrixToImage(QREncoder.encodeRaw(text, EncodeOptions(border = 4)), scale)
 
     // decode-batch.test.ts L9-19: centre an RGBA image horizontally on a white canvas.
     private fun pad(img: Image, width: Int): Image {
@@ -254,7 +254,7 @@ class QRScannerTest {
     // decode.test.ts L273-286 (I420 shape): luma written straight into the owned arena.
     @Test
     fun processLumaZeroCopy() {
-        val img = TestImages.matrixToGrayImage(TestEncoder.encodeRaw("ZERO COPY LUMA", border = 4), 4)
+        val img = TestImages.matrixToGrayImage(QREncoder.encodeRaw("ZERO COPY LUMA", EncodeOptions(border = 4)), 4)
         val s = QRScanner(img.width + 40, img.height + 20)
         val owned = s.luma
         System.arraycopy(img.data, 0, s.luma, 0, img.data.size)
@@ -267,7 +267,7 @@ class QRScannerTest {
     // Camera Y plane: row stride > width plus a leading offset decodes like the tight copy.
     @Test
     fun grayStridedPlaneMatchesTight() {
-        val img = TestImages.matrixToGrayImage(TestEncoder.encodeRaw("STRIDED Y PLANE", border = 4), 4)
+        val img = TestImages.matrixToGrayImage(QREncoder.encodeRaw("STRIDED Y PLANE", EncodeOptions(border = 4)), 4)
         val w = img.width
         val h = img.height
         val stride = w + 64

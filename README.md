@@ -1,6 +1,6 @@
 # QR
 
-A pure Kotlin library for QR code reading/decoding. Port of [Paul Miller's paulmillr/qr](https://github.com/paulmillr/qr) library.
+A pure Kotlin library for QR code encoding and decoding. Port of [Paul Miller's paulmillr/qr](https://github.com/paulmillr/qr) library.
 
 No external dependencies.
 
@@ -18,6 +18,8 @@ No external dependencies.
 - Reed-Solomon error correction
 - The full JS decoder option set: `effort`, `timeLimit`, `nativeLimit`, `textDecoder`, and the
   `pointsOnDetect` / `imageOnResult` / `imageOnBitmap` callbacks
+- Encoding to a raw module grid, terminal text (half-block ASCII or ANSI colors), SVG, GIF bytes, or a
+  GIF data URL, with output identical to the JS `encodeQR`
 
 ## Installation
 
@@ -227,6 +229,55 @@ Besides `QRDecodingException`, `IllegalArgumentException` is thrown for invalid 
 bad buffer size) and `IllegalStateException` in the (practically unreachable) finder-storage-exhaustion
 case, so callers such as camera analyzers should catch `Exception`.
 
+## Encoding
+
+```kotlin
+import qr.EncodeOptions
+import qr.ErrorCorrection
+import qr.QREncoder
+
+// Module grid, rows [y][x], true = dark; border (and scale) included. v1 + border 2 -> 25x25.
+val grid: Array<BooleanArray> = QREncoder.encodeRaw("HELLO WORLD")
+
+// Terminal output: half-block glyphs (two rows per line) or ANSI-colored cells.
+println(QREncoder.encodeAscii("https://example.com"))
+print(QREncoder.encodeTerm("https://example.com"))
+
+// SVG document (one <path>; optimize = false emits one <rect> per dark pixel).
+val svg: String = QREncoder.encodeSvg("hello", EncodeOptions(ecc = ErrorCorrection.HIGH))
+
+// GIF87a bytes, one pixel per output pixel, e.g. for a file or an image view.
+val gif: ByteArray = QREncoder.encodeGif("hello", EncodeOptions(scale = 8))
+
+// The same GIF as a data URL for <img src="...">. Prefer encodeGif for very large outputs: the
+// data URL holds the GIF, the base64 builder and the string at once.
+val url: String = QREncoder.encodeDataUrl("hello", EncodeOptions(scale = 8))
+```
+
+All six functions take `(text: String, options: EncodeOptions = EncodeOptions())`.
+`EncodeOptions` is the JS `QrOpts`:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `ecc` | `ErrorCorrection.MEDIUM` | Error correction level: `LOW`, `MEDIUM`, `QUARTILE`, `HIGH`. |
+| `encoding` | `null` | `Encoding.NUMERIC` / `ALPHANUMERIC` / `BYTE`. With `null`, the smallest mode that fits the text is chosen. |
+| `textEncoder` | `null` | Custom `(String) -> ByteArray` for byte mode. With `null`, the text is encoded as UTF-8 (WHATWG `TextEncoder`: a lone surrogate becomes U+FFFD). |
+| `version` | `null` | 1..40. With `null`, the smallest version that fits is used. |
+| `mask` | `null` | 0..7. With `null`, all eight masks are scored and the first with the lowest penalty is kept. |
+| `border` | `2` | Quiet zone in modules, > 0. |
+| `scale` | `1` | Pixels per module, 1..1024. No visual effect for SVG (it only enlarges the viewBox and multiplies the path coordinates). |
+| `optimize` | `true` | SVG only: draw one compact `<path>` instead of one `<rect>` per dark pixel. |
+
+As in JS, the text is encoded as a single segment (no mixed-mode segmentation, no ECI header).
+
+Invalid input throws `IllegalArgumentException` with the upstream message: `Capacity overflow` (text
+does not fit the chosen or largest version), `Unknown letter: "x". Allowed: ...` (text outside a
+forced numeric/alphanumeric mode), `Invalid version=...`, `invalid mask=...`, `invalid border=...`,
+`invalid scale factor: ...`, and `invalid opts: output is WxW (max N), reduce border/scale` when the
+output side exceeds 1024 pixels (raw, term, svg) or 4096 pixels (ascii, gif, data-url).
+
+`QREncoder` is stateless and thread-safe.
+
 ## Requirements
 
 - JDK 17 or higher
@@ -245,16 +296,6 @@ git submodule update --init --recursive
 # Publish to local Maven repository
 ./gradlew publishToMavenLocal
 ```
-
-## Compatibility with paulmillr/qr
-
-This is a port of the decoder from paulmillr/qr. Results are identical to the JS
-decoder on every test image (565/565 BoofCV/issue/misc images, default and all-results modes) and on
-all 9281 small vectors; see [CLAUDE.md](CLAUDE.md) for the parity tests and the few accepted
-deviations. The reported `pointsOnDetect` geometry is also bit-identical, as checked by
-`decode-points.json.gz`. Kotlin additions are gray (Y-plane) input with offset/stride and the
-synchronous `QRScanner` API. Not ported: async/cooperative scanning (`decodeAsync`), `BarcodeDetector`
-and the browser helpers (`dom.ts`).
 
 ## Acknowledgments
 

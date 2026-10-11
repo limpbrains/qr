@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test
 class BatchTest {
     private fun BatchResult.flat(): List<String> = texts + listOfNotNull(failure?.tag ?: error?.message)
 
-    private fun symbol(text: String, scale: Int) = TestImages.matrixToImage(TestEncoder.encodeRaw(text, border = 4), scale)
+    private fun symbol(text: String, scale: Int) = TestImages.matrixToImage(QREncoder.encodeRaw(text, EncodeOptions(border = 4)), scale)
 
     // decode-batch.test.ts L85-108
     @Test

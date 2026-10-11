@@ -109,8 +109,8 @@ class FinderTest {
 
     @Test
     fun pickMandatoryOnSymbol() {
-        val words = TestEncoder.encodeCodewords("HELLO", 1, ErrorCorrection.LOW, TestEncoder.Encoding.ALPHANUMERIC)
-        val img = TestImages.matrixToGrayImage(TestEncoder.symbolMatrix(1, ErrorCorrection.LOW, words), scale = 4)
+        val words = Segments.encodeData(1, ErrorCorrection.LOW, "HELLO", Encoding.ALPHANUMERIC, null)
+        val img = TestImages.matrixToGrayImage(TestSymbols.symbolMatrix(1, ErrorCorrection.LOW, words), scale = 4)
         val scanner = QRScanner(img.width, img.height)
         scanner.addImage(img.width, img.height, img.data, PixelFormat.GRAY)
         scanner.ensureResized()

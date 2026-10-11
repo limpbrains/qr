@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test
 import kotlin.random.Random
 
 class RSTest {
-    private fun rsEcc(data: IntArray, eccWords: Int): IntArray = TestEncoder.rsEcc(data, eccWords)
+    private fun rsEcc(data: IntArray, eccWords: Int): IntArray = RS.encode(data, eccWords)
 
     private fun encode(data: IntArray, eccWords: Int): IntArray = data + rsEcc(data, eccWords)
 
